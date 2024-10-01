@@ -32,8 +32,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let readTypes = readPermissions.compactMap { permissionToHKObjectType($0) }
-        
         var result: [String: Bool] = [:]
         
         for permission in readPermissions {
@@ -115,14 +113,17 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     
     @objc func queryAggregated(_ call: CAPPluginCall) {
-        guard let startDate = call.getDate("startDate"),
-              let endDate = call.getDate("endDate"),
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
               let dataTypeString = call.getString("dataType"),
-              let bucket = call.getString("bucket") else {
+              let bucket = call.getString("bucket"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
             call.reject("Invalid parameters")
             return
         }
 
+        
         guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
             call.reject("Invalid data type")
             return
@@ -185,16 +186,26 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
     
+    var isoDateFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
     
+
     @objc func queryWorkouts(_ call: CAPPluginCall) {
-        guard let startDate = call.getDate("startDate"),
-              let endDate = call.getDate("endDate"),
+        guard let startDateString =  call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
               let includeHeartRate = call.getBool("includeHeartRate"),
-              let includeRoute = call.getBool("includeRoute") else {
+              let includeRoute = call.getBool("includeRoute"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
             call.reject("Invalid parameters")
             return
         }
+        
 
+        
         // Create a predicate to filter workouts by date
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
 
