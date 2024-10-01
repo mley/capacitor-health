@@ -1,7 +1,7 @@
 export interface HealthPlugin {
   /**
-   * Checks if health API is available. 
-   * Android: If false is returned, the Google Health Connect app is probably not installed. 
+   * Checks if health API is available.
+   * Android: If false is returned, the Google Health Connect app is probably not installed.
    * See showHealthConnectInPlayStore()
    *
    */
@@ -15,10 +15,10 @@ export interface HealthPlugin {
 
   /**
    * Requests the permission from the user.
-   * 
+   *
    * Android: Apps can ask only a few times for permissions, after that the user has to grant them manually in
    * the Health Connect app. See openHealthConnectSettings()
-   * 
+   *
    * @param permissions permissions to request
    */
   requestHealthPermissions(permissions: PermissionsRequest): Promise<PermissionResponse>;
@@ -53,14 +53,14 @@ export interface HealthPlugin {
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
 }
 
-type HealthPermission = 'calories' | 'workouts' | 'steps' | 'distance' | 'heartRate' | 'route';
+export declare type HealthPermission = 'calories' | 'workouts' | 'steps' | 'distance' | 'heartRate' | 'route';
 
 export interface PermissionsRequest {
   read: HealthPermission[];
 }
 
 export interface PermissionResponse {
-  read: { [key: string]: boolean; }[];
+  read: { [key: string]: boolean }[];
 }
 
 export interface QueryWorkoutRequest {
