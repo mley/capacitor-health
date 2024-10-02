@@ -3,6 +3,9 @@ name: Publish npm package and Create GitHub Release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write  # Grant write permission to push the tag
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
@@ -10,6 +13,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Ensures the entire Git history is available
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -35,7 +40,21 @@ jobs:
       - name: Get package version
         id: get_version
         run: |
-          echo "VERSION=$(node -p -e "require('./package.json').version")" >> $GITHUB_ENV
+          echo "VERSION=$(node -p -e \"require('./package.json').version\")" >> $GITHUB_ENV
+
+      - name: Get the last Git tag
+        id: last_tag
+        run: echo "LAST_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+
+      - name: Get release notes from commits
+        id: release_notes
+        run: |
+          echo "Release Notes:" > release_notes.txt
+          git log ${{ env.LAST_TAG }}..HEAD --pretty=format:"- %s" >> release_notes.txt
+        shell: bash
+
+      - name: Show release notes
+        run: cat release_notes.txt
 
       - name: Create Git tag
         run: |
@@ -47,9 +66,7 @@ jobs:
         with:
           tag_name: v${{ env.VERSION }}
           release_name: Release v${{ env.VERSION }}
-          body: |
-            Changes in this release:
-            - Published version v${{ env.VERSION }} to npm
+          body_path: ./release_notes.txt
           draft: false
           prerelease: false
         env:
