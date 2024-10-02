@@ -27,43 +27,31 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     
     @objc func checkHealthPermissions(_ call: CAPPluginCall) {
-        guard let readPermissions = call.getArray("read") as? [String] else {
-            call.reject("Invalid permissions format")
-            return
-        }
-
-        var result: [String: Bool] = [:]
-        
-        for permission in readPermissions {
-            let types = permissionToHKObjectType(permission)
-            let states = types.map{
-                let s = healthStore.authorizationStatus(for: $0)
-                let authorized = (s == .sharingAuthorized)
-                return authorized
-            }
-            result[permission] = states.allSatisfy{($0)}
-            
-        }
-        
-        call.resolve(["read": result])
+        call.reject("not implemented")
     }
 
 
         @objc func requestHealthPermissions(_ call: CAPPluginCall) {
-            guard let readPermissions = call.getArray("read") as? [String] else {
+            guard let permissions = call.getArray("permissions") as? [String] else {
                 call.reject("Invalid permissions format")
                 return
             }
 
-            let readTypes: [HKObjectType] = readPermissions.flatMap { permissionToHKObjectType($0) }
+            let types: [HKObjectType] = permissions.flatMap { permissionToHKObjectType($0) }
 
-            healthStore.requestAuthorization(toShare: nil, read: Set(readTypes)) { success, error in
+            healthStore.requestAuthorization(toShare: nil, read: Set(types)) { success, error in
                 if success {
-                    self.checkHealthPermissions(call)
+                    //we don't know which actual permissions were granted, so we assume all
+                    var result: [String: Bool] = [:]
+                    permissions.forEach{ result[$0] = true }
+                    call.resolve(["permissions": result])
                 } else if let error = error {
                     call.reject("Authorization failed: \(error.localizedDescription)")
                 } else {
-                    self.checkHealthPermissions(call)
+                    //assume no permissions were granted. We can ask user to adjust them manually
+                    var result: [String: Bool] = [:]
+                    permissions.forEach{ result[$0] = false }
+                    call.resolve(["permissions": result])
                 }
             }
         }
@@ -82,13 +70,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         // Permission helpers
         func permissionToHKObjectType(_ permission: String) -> [HKObjectType] {
             switch permission {
-            case "steps":
+            case "READ_STEPS":
                 return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
-            case "calories":
+            case "READ_CALORIES":
                 return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
-            case "workouts":
+            case "READ_WORKOUTS":
                 return [HKObjectType.workoutType()]
-            case "distance":
+            case "READ_DISTANCE":
                 return [
                     HKObjectType.quantityType(forIdentifier: .distanceCycling),
                     HKObjectType.quantityType(forIdentifier: .distanceSwimming),

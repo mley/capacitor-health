@@ -38,7 +38,7 @@ import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
 
 enum class CapHealthPermission {
-    steps, workouts, heartRate, route, calories, distance;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_CALORIES, READ_DISTANCE;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -56,27 +56,27 @@ enum class CapHealthPermission {
     name = "HealthPlugin",
     permissions = [
         Permission(
-            alias = "steps",
+            alias = "READ_STEPS",
             strings = ["android.permission.health.READ_STEPS"]
         ),
         Permission(
-            alias = "workouts",
+            alias = "READ_WORKOUTS",
             strings = ["android.permission.health.READ_EXERCISE"]
         ),
         Permission(
-            alias = "distance",
+            alias = "READ_DISTANCE",
             strings = ["android.permission.health.READ_DISTANCE"]
         ),
         Permission(
-            alias = "calories",
+            alias = "READ_CALORIES",
             strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]
         ),
         Permission(
-            alias = "heartRate",
+            alias = "READ_HEART_RATE",
             strings = ["android.permission.health.READ_HEART_RATE"]
         ),
         Permission(
-            alias = "route",
+            alias = "READ_ROUTE",
             strings = ["android.permission.health.READ_EXERCISE_ROUTE"]
         )
     ]
@@ -128,18 +128,18 @@ class HealthPlugin : Plugin() {
 
 
     private val permissionMapping = mapOf(
-        Pair(CapHealthPermission.workouts, "READ_EXERCISE"),
-        Pair(CapHealthPermission.route, "READ_EXERCISE_ROUTE"),
-        Pair(CapHealthPermission.heartRate, "READ_HEART_RATE"),
-        Pair(CapHealthPermission.calories, "READ_ACTIVE_CALORIES_BURNED"),
-        Pair(CapHealthPermission.distance, "READ_DISTANCE"),
-        Pair(CapHealthPermission.steps, "READ_STEPS")
+        Pair(CapHealthPermission.READ_WORKOUTS, "READ_EXERCISE"),
+        Pair(CapHealthPermission.READ_ROUTE, "READ_EXERCISE_ROUTE"),
+        Pair(CapHealthPermission.READ_HEART_RATE, "READ_HEART_RATE"),
+        Pair(CapHealthPermission.READ_CALORIES, "READ_ACTIVE_CALORIES_BURNED"),
+        Pair(CapHealthPermission.READ_DISTANCE, "READ_DISTANCE"),
+        Pair(CapHealthPermission.READ_STEPS, "READ_STEPS")
     )
 
     // Check if a set of permissions are granted
     @PluginMethod
     fun checkHealthPermissions(call: PluginCall) {
-        val permissionsToCheck = call.getArray("read")
+        val permissionsToCheck = call.getArray("permissions")
         if (permissionsToCheck == null) {
             call.reject("Must provide permissions to check")
             return
@@ -175,7 +175,7 @@ class HealthPlugin : Plugin() {
         }
 
         val result = JSObject()
-        result.put("read", readPermissions)
+        result.put("permissions", readPermissions)
         return result
 
     }
@@ -187,7 +187,7 @@ class HealthPlugin : Plugin() {
     // Request a set of permissions from the user
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
-        val permissionsToRequest = call.getArray("read")
+        val permissionsToRequest = call.getArray("permissions")
         if (permissionsToRequest == null) {
             call.reject("Must provide permissions to request")
             return
@@ -231,14 +231,14 @@ class HealthPlugin : Plugin() {
 
     private fun getMetricAndMapper(dataType: String): MetricAndMapper {
         return when (dataType) {
-            "steps" -> metricAndMapper("steps", CapHealthPermission.steps, StepsRecord.COUNT_TOTAL) { it?.toDouble() }
+            "steps" -> metricAndMapper("steps", CapHealthPermission.READ_STEPS, StepsRecord.COUNT_TOTAL) { it?.toDouble() }
             "calories" -> metricAndMapper(
                 "calories",
-                CapHealthPermission.calories,
+                CapHealthPermission.READ_CALORIES,
                 ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL
             ) { it?.inKilocalories }
 
-            "distance" -> metricAndMapper("distance", CapHealthPermission.distance, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
+            "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
     }
@@ -396,7 +396,7 @@ class HealthPlugin : Plugin() {
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("calories"))
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("distance"))
 
-                    if (includeHeartRate && hasPermission(CapHealthPermission.heartRate)) {
+                    if (includeHeartRate && hasPermission(CapHealthPermission.READ_HEART_RATE)) {
                         // Query and add heart rate data if requested
                         val heartRates =
                             queryHeartRateForWorkout(workout.startTime, workout.endTime)

@@ -8,16 +8,20 @@ export interface HealthPlugin {
   isHealthAvailable(): Promise<{ available: boolean }>;
 
   /**
-   * Returns for each given permission, if it was granted by the underlying health API
+   * Android only: Returns for each given permission, if it was granted by the underlying health API
    * @param permissions permissions to query
    */
   checkHealthPermissions(permissions: PermissionsRequest): Promise<PermissionResponse>;
 
   /**
-   * Requests the permission from the user.
+   * Requests the permissions from the user.
    *
    * Android: Apps can ask only a few times for permissions, after that the user has to grant them manually in
    * the Health Connect app. See openHealthConnectSettings()
+   *
+   * iOS: If the permissions are already granted or denied, this method will just return without asking the user. In iOS
+   * we can't really detect if a user granted or denied a permission. The return value reflects the assumption that all
+   * permissions were granted.
    *
    * @param permissions permissions to request
    */
@@ -53,14 +57,20 @@ export interface HealthPlugin {
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
 }
 
-export declare type HealthPermission = 'calories' | 'workouts' | 'steps' | 'distance' | 'heartRate' | 'route';
+export declare type HealthPermission =
+  | 'READ_STEPS'
+  | 'READ_WORKOUTS'
+  | 'READ_CALORIES'
+  | 'READ_DISTANCE'
+  | 'READ_HEART_RATE'
+  | 'READ_ROUTE';
 
 export interface PermissionsRequest {
-  read: HealthPermission[];
+  permissions: HealthPermission[];
 }
 
 export interface PermissionResponse {
-  read: { [key: string]: boolean }[];
+  permissions: { [key: string]: boolean }[];
 }
 
 export interface QueryWorkoutRequest {
@@ -103,7 +113,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: string;
+  dataType: 'steps' | 'calories';
   bucket: string;
 }
 

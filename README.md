@@ -85,8 +85,8 @@ npx cap sync
 isHealthAvailable() => Promise<{ available: boolean; }>
 ```
 
-Checks if health API is available. 
-Android: If false is returned, the Google Health Connect app is probably not installed. 
+Checks if health API is available.
+Android: If false is returned, the Google Health Connect app is probably not installed.
 See showHealthConnectInPlayStore()
 
 **Returns:** <code>Promise&lt;{ available: boolean; }&gt;</code>
@@ -100,7 +100,7 @@ See showHealthConnectInPlayStore()
 checkHealthPermissions(permissions: PermissionsRequest) => Promise<PermissionResponse>
 ```
 
-Returns for each given permission, if it was granted by the underlying health API
+Android only: Returns for each given permission, if it was granted by the underlying health API
 
 | Param             | Type                                                              | Description          |
 | ----------------- | ----------------------------------------------------------------- | -------------------- |
@@ -117,10 +117,14 @@ Returns for each given permission, if it was granted by the underlying health AP
 requestHealthPermissions(permissions: PermissionsRequest) => Promise<PermissionResponse>
 ```
 
-Requests the permission from the user.
+Requests the permissions from the user.
 
 Android: Apps can ask only a few times for permissions, after that the user has to grant them manually in
 the Health Connect app. See openHealthConnectSettings()
+
+iOS: If the permissions are already granted or denied, this method will just return without asking the user. In iOS
+we can't really detect if a user granted or denied a permission. The return value reflects the assumption that all
+permissions were granted.
 
 | Param             | Type                                                              | Description            |
 | ----------------- | ----------------------------------------------------------------- | ---------------------- |
@@ -205,16 +209,16 @@ Query workouts
 
 #### PermissionResponse
 
-| Prop       | Type                                       |
-| ---------- | ------------------------------------------ |
-| **`read`** | <code>{ [key: string]: boolean; }[]</code> |
+| Prop              | Type                                       |
+| ----------------- | ------------------------------------------ |
+| **`permissions`** | <code>{ [key: string]: boolean; }[]</code> |
 
 
 #### PermissionsRequest
 
-| Prop       | Type                            |
-| ---------- | ------------------------------- |
-| **`read`** | <code>HealthPermission[]</code> |
+| Prop              | Type                            |
+| ----------------- | ------------------------------- |
+| **`permissions`** | <code>HealthPermission[]</code> |
 
 
 #### QueryAggregatedResponse
@@ -235,12 +239,12 @@ Query workouts
 
 #### QueryAggregatedRequest
 
-| Prop            | Type                |
-| --------------- | ------------------- |
-| **`startDate`** | <code>string</code> |
-| **`endDate`**   | <code>string</code> |
-| **`dataType`**  | <code>string</code> |
-| **`bucket`**    | <code>string</code> |
+| Prop            | Type                               |
+| --------------- | ---------------------------------- |
+| **`startDate`** | <code>string</code>                |
+| **`endDate`**   | <code>string</code>                |
+| **`dataType`**  | <code>'steps' \| 'calories'</code> |
+| **`bucket`**    | <code>string</code>                |
 
 
 #### QueryWorkoutResponse
@@ -300,6 +304,6 @@ Query workouts
 
 #### HealthPermission
 
-<code>'calories' | 'workouts' | 'steps' | 'distance' | 'heartRate' | 'route'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE'</code>
 
 </docgen-api>
