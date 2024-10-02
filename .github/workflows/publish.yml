@@ -35,8 +35,9 @@ jobs:
       - name: Get package version
         id: get_version
         run: |
-          echo "VERSION=$(node -p -e \"require('./package.json').version\")" >> $GITHUB_ENV
-
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
       - name: Get the last Git tag
         id: last_tag
         run: echo "LAST_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
