@@ -1,6 +1,7 @@
 package com.fit_up.health.capacitor
 
 import android.content.Intent
+import android.health.connect.HealthPermissions
 import android.net.Uri
 import android.util.Log
 import androidx.activity.result.ActivityResultCallback
@@ -128,12 +129,12 @@ class HealthPlugin : Plugin() {
 
 
     private val permissionMapping = mapOf(
-        Pair(CapHealthPermission.READ_WORKOUTS, "READ_EXERCISE"),
-        Pair(CapHealthPermission.READ_ROUTE, "READ_EXERCISE_ROUTE"),
-        Pair(CapHealthPermission.READ_HEART_RATE, "READ_HEART_RATE"),
-        Pair(CapHealthPermission.READ_CALORIES, "READ_ACTIVE_CALORIES_BURNED"),
-        Pair(CapHealthPermission.READ_DISTANCE, "READ_DISTANCE"),
-        Pair(CapHealthPermission.READ_STEPS, "READ_STEPS")
+        Pair(CapHealthPermission.READ_WORKOUTS, "android.permission.health.READ_EXERCISE"),
+        Pair(CapHealthPermission.READ_ROUTE, "android.permission.health.READ_EXERCISE_ROUTE"),
+        Pair(CapHealthPermission.READ_HEART_RATE, "android.permission.health.READ_HEART_RATE"),
+        Pair(CapHealthPermission.READ_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
+        Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
+        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS")
     )
 
     // Check if a set of permissions are granted
@@ -170,7 +171,7 @@ class HealthPlugin : Plugin() {
 
             readPermissions.put(
                 permission.name,
-                grantedPermissionsWithoutPrefix.contains(permissionMapping[permission])
+                grantedPermissionsWithoutPrefix.contains(permissionMapping[permission]?.substringAfterLast('.'))
             )
         }
 

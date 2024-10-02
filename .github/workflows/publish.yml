@@ -1,4 +1,4 @@
-name: Publish npm package
+name: Publish npm package and Create GitHub Release
 
 on:
   workflow_dispatch:
@@ -31,3 +31,26 @@ jobs:
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Get package version
+        id: get_version
+        run: |
+          echo "VERSION=$(node -p -e "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Create Git tag
+        run: |
+          git tag v${{ env.VERSION }}
+          git push origin v${{ env.VERSION }}
+
+      - name: Create GitHub release
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          release_name: Release v${{ env.VERSION }}
+          body: |
+            Changes in this release:
+            - Published version v${{ env.VERSION }} to npm
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

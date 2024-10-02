@@ -1,6 +1,10 @@
 # capacitor-health
 
-Capacitor plugin for Apple Health and Google Health Connect
+Capacitor plugin to query data from Apple Health and Google Health Connect
+
+## Thanks and attribution
+
+Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/). Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
 
 ## Install
 
