@@ -348,7 +348,7 @@ class HealthPlugin : Plugin() {
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {
         return healthConnectClient.permissionController.getGrantedPermissions().map { it.substringAfterLast('.') }.toSet()
-            .contains(permissionMapping[p])
+            .contains(permissionMapping[p]?.substringAfterLast('.'))
     }
 
 
@@ -477,7 +477,7 @@ class HealthPlugin : Plugin() {
         return routeArray
     }
 
-    
+
     private val exerciseTypeMapping = mapOf(
         0 to "OTHER",
         2 to "BADMINTON",
