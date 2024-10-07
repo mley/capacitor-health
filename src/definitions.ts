@@ -78,6 +78,7 @@ export interface QueryWorkoutRequest {
   endDate: string;
   includeHeartRate: boolean;
   includeRoute: boolean;
+  includeSteps: boolean;
 }
 
 export interface HeartRateSample {
@@ -104,10 +105,11 @@ export interface Workout {
   id?: string;
   duration: number;
   distance?: number;
+  steps?: number;
   calories: number;
   sourceBundleId: string;
-  route: RouteSample[];
-  heartRate: HeartRateSample[];
+  route?: RouteSample[];
+  heartRate?: HeartRateSample[];
 }
 
 export interface QueryAggregatedRequest {

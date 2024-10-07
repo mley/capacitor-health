@@ -11,51 +11,51 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "HealthPlugin"
     public let jsName = "HealthPlugin"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "isHealthAvailable", returnType: CAPPluginReturnPromise),     
+        CAPPluginMethod(name: "isHealthAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkHealthPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestHealthPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise)
     ]
-
+    
     let healthStore = HKHealthStore()
-
+    
     @objc func isHealthAvailable(_ call: CAPPluginCall) {
-            let isAvailable = HKHealthStore.isHealthDataAvailable()
-            call.resolve(["available": isAvailable])
-        }
+        let isAvailable = HKHealthStore.isHealthDataAvailable()
+        call.resolve(["available": isAvailable])
+    }
     
     @objc func checkHealthPermissions(_ call: CAPPluginCall) {
         call.reject("not implemented")
     }
-
-
-        @objc func requestHealthPermissions(_ call: CAPPluginCall) {
-            guard let permissions = call.getArray("permissions") as? [String] else {
-                call.reject("Invalid permissions format")
-                return
-            }
-
-            let types: [HKObjectType] = permissions.flatMap { permissionToHKObjectType($0) }
-
-            healthStore.requestAuthorization(toShare: nil, read: Set(types)) { success, error in
-                if success {
-                    //we don't know which actual permissions were granted, so we assume all
-                    var result: [String: Bool] = [:]
-                    permissions.forEach{ result[$0] = true }
-                    call.resolve(["permissions": result])
-                } else if let error = error {
-                    call.reject("Authorization failed: \(error.localizedDescription)")
-                } else {
-                    //assume no permissions were granted. We can ask user to adjust them manually
-                    var result: [String: Bool] = [:]
-                    permissions.forEach{ result[$0] = false }
-                    call.resolve(["permissions": result])
-                }
+    
+    
+    @objc func requestHealthPermissions(_ call: CAPPluginCall) {
+        guard let permissions = call.getArray("permissions") as? [String] else {
+            call.reject("Invalid permissions format")
+            return
+        }
+        
+        let types: [HKObjectType] = permissions.flatMap { permissionToHKObjectType($0) }
+        
+        healthStore.requestAuthorization(toShare: nil, read: Set(types)) { success, error in
+            if success {
+                //we don't know which actual permissions were granted, so we assume all
+                var result: [String: Bool] = [:]
+                permissions.forEach{ result[$0] = true }
+                call.resolve(["permissions": result])
+            } else if let error = error {
+                call.reject("Authorization failed: \(error.localizedDescription)")
+            } else {
+                //assume no permissions were granted. We can ask user to adjust them manually
+                var result: [String: Bool] = [:]
+                permissions.forEach{ result[$0] = false }
+                call.resolve(["permissions": result])
             }
         }
-
+    }
+    
     @objc func openAppleHealthSettings(_ call: CAPPluginCall) {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             DispatchQueue.main.async {
@@ -66,27 +66,31 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Unable to open app-specific settings")
         }
     }
-
-        // Permission helpers
-        func permissionToHKObjectType(_ permission: String) -> [HKObjectType] {
-            switch permission {
-            case "READ_STEPS":
-                return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
-            case "READ_CALORIES":
-                return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
-            case "READ_WORKOUTS":
-                return [HKObjectType.workoutType()]
-            case "READ_DISTANCE":
-                return [
-                    HKObjectType.quantityType(forIdentifier: .distanceCycling),
-                    HKObjectType.quantityType(forIdentifier: .distanceSwimming),
-                    HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning),
-                    HKObjectType.quantityType(forIdentifier: .distanceDownhillSnowSports)
-                ].compactMap{$0}
-            default:
-                return []
-            }
+    
+    // Permission helpers
+    func permissionToHKObjectType(_ permission: String) -> [HKObjectType] {
+        switch permission {
+        case "READ_STEPS":
+            return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
+        case "READ_CALORIES":
+            return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
+        case "READ_WORKOUTS":
+            return [HKObjectType.workoutType()].compactMap{$0}
+        case "READ_HEART_RATE":
+            return  [HKObjectType.quantityType(forIdentifier: .heartRate)].compactMap{$0}
+        case "READ_ROUTE":
+            return  [HKSeriesType.workoutRoute()].compactMap{$0}
+        case "READ_DISTANCE":
+            return [
+                HKObjectType.quantityType(forIdentifier: .distanceCycling),
+                HKObjectType.quantityType(forIdentifier: .distanceSwimming),
+                HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning),
+                HKObjectType.quantityType(forIdentifier: .distanceDownhillSnowSports)
+            ].compactMap{$0}
+        default:
+            return []
         }
+    }
     
     func aggregateTypeToHKQuantityType(_ dataType: String) -> HKQuantityType? {
         switch dataType {
@@ -110,7 +114,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Invalid parameters")
             return
         }
-
+        
         
         guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
             call.reject("Invalid data type")
@@ -119,7 +123,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         
         
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-
+        
         guard let interval = calculateInterval(bucket: bucket) else {
             call.reject("Invalid bucket")
             return
@@ -132,21 +136,21 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             anchorDate: startDate,
             intervalComponents: interval
         )
-
+        
         query.initialResultsHandler = { query, result, error in
             if let error = error {
                 call.reject("Error fetching aggregated data: \(error.localizedDescription)")
                 return
             }
-
+            
             var aggregatedSamples: [[String: Any]] = []
-
+            
             result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
                 if let sum = statistics.sumQuantity() {
                     let startDate = statistics.startDate.timeIntervalSince1970 * 1000
                     let endDate = statistics.endDate.timeIntervalSince1970 * 1000
                     let value = sum.doubleValue(for: HKUnit.count())
-
+                    
                     aggregatedSamples.append([
                         "startDate": startDate,
                         "endDate": endDate,
@@ -154,13 +158,41 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     ])
                 }
             }
-
+            
             call.resolve(["aggregatedData": aggregatedSamples])
         }
-
+        
         healthStore.execute(query)
     }
+    
+    private func queryAggregated(for startDate: Date, for endDate: Date, for dataType: HKQuantityType?, completion: @escaping(Double?) -> Void) {
+        
+    
+        guard let quantityType = dataType else {
+            completion(nil)
+            return
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
 
+        let query = HKStatisticsQuery(
+            quantityType: quantityType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { _, result, _ in
+            guard let result = result, let sum = result.sumQuantity() else {
+                completion(0.0)
+                return
+            }
+            completion(sum.doubleValue(for: HKUnit.count()))
+        }
+        
+        healthStore.execute(query)
+        
+    }
+    
+    
+    
     func calculateInterval(bucket: String) -> DateComponents? {
         switch bucket {
         case "hour":
@@ -180,35 +212,37 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         return f
     }()
     
-
+    
     @objc func queryWorkouts(_ call: CAPPluginCall) {
         guard let startDateString =  call.getString("startDate"),
               let endDateString = call.getString("endDate"),
               let includeHeartRate = call.getBool("includeHeartRate"),
               let includeRoute = call.getBool("includeRoute"),
+              let includeSteps = call.getBool("includeSteps"),
               let startDate = self.isoDateFormatter.date(from: startDateString),
               let endDate = self.isoDateFormatter.date(from: endDateString) else {
             call.reject("Invalid parameters")
             return
         }
         
-
+        
         
         // Create a predicate to filter workouts by date
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-
+        
         let workoutQuery = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { query, samples, error in
             if let error = error {
                 call.reject("Error querying workouts: \(error.localizedDescription)")
                 return
             }
-
+            
             guard let workouts = samples as? [HKWorkout] else {
                 call.resolve(["workouts": []])
                 return
             }
-
+            
             var workoutList: [[String: Any]] = []
+            var errors: [String: String] = [:]
             let dispatchGroup = DispatchGroup()
             
             // Process each workout
@@ -232,81 +266,101 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 // Query heart rate data if requested
                 if includeHeartRate {
                     dispatchGroup.enter()
-                    self.queryHeartRate(for: workout, completion: { heartRates in
+                    self.queryHeartRate(for: workout, completion: { (heartRates, error) in
+                        if(error != nil) {
+                            errors["heart-rate"] = error
+                        }
                         heartRateSamples = heartRates
                         dispatchGroup.leave()
                     })
                 }
-
+                
                 // Query route data if requested
                 if includeRoute {
                     dispatchGroup.enter()
-                    self.queryRoute(for: workout, completion: { routes in
+                    self.queryRoute(for: workout, completion: { (routes, error) in
+                        if(error != nil) {
+                            errors["route"] = error
+                        }
                         routeSamples = routes
                         dispatchGroup.leave()
                     })
                 }
-
+                
+                if includeSteps {
+                    dispatchGroup.enter()
+                    self.queryAggregated(for: workout.startDate, for: workout.endDate, for: HKObjectType.quantityType(forIdentifier: .stepCount), completion:{ (steps) in
+                        if(steps != nil) {
+                            workoutDict["steps"] = steps
+                        }
+                        dispatchGroup.leave()
+                    })
+                }
+                
                 dispatchGroup.notify(queue: .main) {
                     workoutDict["heartRate"] = heartRateSamples
                     workoutDict["route"] = routeSamples
                     workoutList.append(workoutDict)
                 }
                 
-
+                
             }
-
+            
             dispatchGroup.notify(queue: .main) {
-                call.resolve(["workouts": workoutList])
+                call.resolve(["workouts": workoutList, "errors": errors])
             }
         }
-
+        
         healthStore.execute(workoutQuery)
     }
-
+    
     
     
     // MARK: - Query Heart Rate Data
-    private func queryHeartRate(for workout: HKWorkout, completion: @escaping ([[String: Any]]) -> Void) {
+    private func queryHeartRate(for workout: HKWorkout, completion: @escaping ([[String: Any]], String?) -> Void) {
         let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate)!
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
         
         let heartRateQuery = HKSampleQuery(sampleType: heartRateType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { query, samples, error in
-            var heartRateSamples: [[String: Any]] = []
-
-            if let heartRateSamplesData = samples as? [HKQuantitySample] {
-                for sample in heartRateSamplesData {
-                    let heartRateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
-                    
-                    let sampleDict: [String: Any] = [
-                        "timestamp": sample.startDate,
-                        "bpm": sample.quantity.doubleValue(for: heartRateUnit)
-                    ]
-                    
-                    heartRateSamples.append(sampleDict)
-                }
+            guard let heartRateSamplesData =  samples as? [HKQuantitySample], error == nil else {
+                completion([], error?.localizedDescription)
+                return
             }
             
-            completion(heartRateSamples)
+            var heartRateSamples: [[String: Any]] = []
+            
+            for sample in heartRateSamplesData {
+                let heartRateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
+                
+                let sampleDict: [String: Any] = [
+                    "timestamp": sample.startDate,
+                    "bpm": sample.quantity.doubleValue(for: heartRateUnit)
+                ]
+                
+                heartRateSamples.append(sampleDict)
+            }
+            
+            
+            completion(heartRateSamples, nil)
         }
         
         healthStore.execute(heartRateQuery)
     }
-
+    
     // MARK: - Query Route Data
-    private func queryRoute(for workout: HKWorkout, completion: @escaping ([[String: Any]]) -> Void) {
+    private func queryRoute(for workout: HKWorkout, completion: @escaping ([[String: Any]], String?) -> Void) {
         let routeType = HKSeriesType.workoutRoute()
         let predicate = HKQuery.predicateForObjects(from: workout)
         
         let routeQuery = HKSampleQuery(sampleType: routeType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { query, samples, error in
             guard let routes = samples as? [HKWorkoutRoute], error == nil else {
-                completion([])
+                completion([], error?.localizedDescription)
                 return
             }
-
+            
             var routeLocations: [[String: Any]] = []
             let routeDispatchGroup = DispatchGroup()
-
+            
             // Query locations for each route
             for route in routes {
                 routeDispatchGroup.enter()
@@ -315,15 +369,15 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     routeDispatchGroup.leave()
                 }
             }
-
+            
             routeDispatchGroup.notify(queue: .main) {
-                completion(routeLocations)
+                completion(routeLocations, nil)
             }
         }
         
         healthStore.execute(routeQuery)
     }
-
+    
     // MARK: - Query Route Locations
     private func queryLocations(for route: HKWorkoutRoute, completion: @escaping ([[String: Any]]) -> Void) {
         var routeLocations: [[String: Any]] = []

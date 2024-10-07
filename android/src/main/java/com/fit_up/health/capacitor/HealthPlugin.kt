@@ -1,7 +1,6 @@
 package com.fit_up.health.capacitor
 
 import android.content.Intent
-import android.health.connect.HealthPermissions
 import android.net.Uri
 import android.util.Log
 import androidx.activity.result.ActivityResultCallback
@@ -358,7 +357,7 @@ class HealthPlugin : Plugin() {
         val endDate = call.getString("endDate")
         val includeHeartRate: Boolean = call.getBoolean("includeHeartRate", false) == true
         val includeRoute: Boolean = call.getBoolean("includeRoute", false) == true
-
+        val includeSteps: Boolean = call.getBoolean("includeSteps", false) == true
         if (startDate == null || endDate == null) {
             call.reject("Missing required parameters: startDate or endDate")
             return
@@ -392,8 +391,11 @@ class HealthPlugin : Plugin() {
                             .stream().mapToLong { it }.sum()
                     }
                     workoutObject.put("duration", duration)
-
-                    addWorkoutMetric(workout, workoutObject, getMetricAndMapper("steps"))
+                    
+                    if(includeSteps) {
+                        addWorkoutMetric(workout, workoutObject, getMetricAndMapper("steps"))
+                    }
+                    
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("calories"))
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("distance"))
 
