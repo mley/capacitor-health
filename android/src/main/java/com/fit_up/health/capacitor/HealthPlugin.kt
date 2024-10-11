@@ -17,6 +17,7 @@ import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -35,10 +36,12 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneId
+import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.jvm.optionals.getOrDefault
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_CALORIES, READ_DISTANCE;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -68,8 +71,12 @@ enum class CapHealthPermission {
             strings = ["android.permission.health.READ_DISTANCE"]
         ),
         Permission(
-            alias = "READ_CALORIES",
+            alias = "READ_ACTIVE_CALORIES",
             strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]
+        ),
+        Permission(
+            alias = "READ_TOTAL_CALORIES",
+            strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]
         ),
         Permission(
             alias = "READ_HEART_RATE",
@@ -131,7 +138,8 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_WORKOUTS, "android.permission.health.READ_EXERCISE"),
         Pair(CapHealthPermission.READ_ROUTE, "android.permission.health.READ_EXERCISE_ROUTE"),
         Pair(CapHealthPermission.READ_HEART_RATE, "android.permission.health.READ_HEART_RATE"),
-        Pair(CapHealthPermission.READ_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
+        Pair(CapHealthPermission.READ_ACTIVE_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
+        Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
         Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS")
     )
@@ -232,12 +240,16 @@ class HealthPlugin : Plugin() {
     private fun getMetricAndMapper(dataType: String): MetricAndMapper {
         return when (dataType) {
             "steps" -> metricAndMapper("steps", CapHealthPermission.READ_STEPS, StepsRecord.COUNT_TOTAL) { it?.toDouble() }
-            "calories" -> metricAndMapper(
+            "active-calories" -> metricAndMapper(
                 "calories",
-                CapHealthPermission.READ_CALORIES,
+                CapHealthPermission.READ_ACTIVE_CALORIES,
                 ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL
             ) { it?.inKilocalories }
-
+            "total-calories" -> metricAndMapper(
+                "calories",
+                CapHealthPermission.READ_TOTAL_CALORIES,
+                TotalCaloriesBurnedRecord.ENERGY_TOTAL
+            ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
@@ -380,6 +392,12 @@ class HealthPlugin : Plugin() {
                 for (workout in response.records) {
                     val workoutObject = JSObject()
                     workoutObject.put("id", workout.metadata.id)
+                    workoutObject.put(
+                        "sourceName",
+                        Optional.ofNullable(workout.metadata.device?.model).getOrDefault("") +
+                                Optional.ofNullable(workout.metadata.device?.model).getOrDefault("")
+                    )
+                    workoutObject.put("sourceBundleId", workout.metadata.dataOrigin.packageName)
                     workoutObject.put("startDate", workout.startTime.toString())
                     workoutObject.put("endDate", workout.endTime.toString())
                     workoutObject.put("workoutType", exerciseTypeMapping.getOrDefault(workout.exerciseType, "OTHER"))
@@ -391,12 +409,16 @@ class HealthPlugin : Plugin() {
                             .stream().mapToLong { it }.sum()
                     }
                     workoutObject.put("duration", duration)
-                    
-                    if(includeSteps) {
+
+                    if (includeSteps) {
                         addWorkoutMetric(workout, workoutObject, getMetricAndMapper("steps"))
                     }
-                    
-                    addWorkoutMetric(workout, workoutObject, getMetricAndMapper("calories"))
+
+                    val readTotalCaloriesResult = addWorkoutMetric(workout, workoutObject, getMetricAndMapper("total-calories"))
+                    if(!readTotalCaloriesResult) {
+                        addWorkoutMetric(workout, workoutObject, getMetricAndMapper("active-calories"))
+                    }
+
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("distance"))
 
                     if (includeHeartRate && hasPermission(CapHealthPermission.READ_HEART_RATE)) {
@@ -429,7 +451,7 @@ class HealthPlugin : Plugin() {
         workout: ExerciseSessionRecord,
         jsWorkout: JSObject,
         metricAndMapper: MetricAndMapper,
-    ) {
+    ): Boolean {
 
         if (hasPermission(metricAndMapper.permission)) {
             try {
@@ -440,12 +462,15 @@ class HealthPlugin : Plugin() {
                 )
                 val aggregation = healthConnectClient.aggregate(request)
                 val value = metricAndMapper.getValue(aggregation)
-                jsWorkout.put(metricAndMapper.name, value)
-
+                if(value != null) {
+                    jsWorkout.put(metricAndMapper.name, value)
+                    return true
+                }
             } catch (e: Exception) {
                 Log.e(tag, "Error", e)
             }
         }
+        return false;
     }
 
 

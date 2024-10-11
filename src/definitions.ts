@@ -60,7 +60,8 @@ export interface HealthPlugin {
 export declare type HealthPermission =
   | 'READ_STEPS'
   | 'READ_WORKOUTS'
-  | 'READ_CALORIES'
+  | 'READ_ACTIVE_CALORIES'
+  | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE';

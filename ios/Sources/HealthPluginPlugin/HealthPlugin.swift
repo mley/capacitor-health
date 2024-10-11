@@ -72,7 +72,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         switch permission {
         case "READ_STEPS":
             return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
-        case "READ_CALORIES":
+        case "READ_ACTIVE_CALORIES":
             return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
         case "READ_WORKOUTS":
             return [HKObjectType.workoutType()].compactMap{$0}
