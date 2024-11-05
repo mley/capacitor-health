@@ -96,7 +96,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         switch dataType {
         case "steps":
             return HKObjectType.quantityType(forIdentifier: .stepCount)
-        case "calories":
+        case "active-calories":
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
         default:
             return nil
