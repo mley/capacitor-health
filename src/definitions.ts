@@ -116,7 +116,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'calories';
+  dataType: 'steps' | 'active-calories';
   bucket: string;
 }
 
