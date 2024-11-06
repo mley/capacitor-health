@@ -149,7 +149,14 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let sum = statistics.sumQuantity() {
                     let startDate = statistics.startDate.timeIntervalSince1970 * 1000
                     let endDate = statistics.endDate.timeIntervalSince1970 * 1000
-                    let value = sum.doubleValue(for: HKUnit.count())
+                    
+                    var value: Double = -1D
+                    if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
+                        value = sum.doubleValue(for: HKUnit.count())
+                    } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
+                        value = sum.doubleValue(for: HKUnit.kilocalorie())
+                    }
+                   
                     
                     aggregatedSamples.append([
                         "startDate": startDate,
