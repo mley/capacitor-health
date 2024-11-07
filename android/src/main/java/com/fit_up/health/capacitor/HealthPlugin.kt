@@ -219,11 +219,15 @@ class HealthPlugin : Plugin() {
     // Open Google Health Connect app settings
     @PluginMethod
     fun openHealthConnectSettings(call: PluginCall) {
-        val intent = Intent().apply {
-            action = HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS
+        try {
+            val intent = Intent().apply {
+                action = HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS
+            }
+            context.startActivity(intent)
+            call.resolve()
+        } catch(e: Exception) {
+            call.reject(e.message)
         }
-        context.startActivity(intent)
-        call.resolve()
     }
 
     // Open the Google Play Store to install Health Connect
