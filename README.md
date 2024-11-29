@@ -247,8 +247,8 @@ Query workouts
 | --------------- | ---------------------------------- |
 | **`startDate`** | <code>string</code>                |
 | **`endDate`**   | <code>string</code>                |
-| **`dataType`**  | <code>'steps' \| 'calories'</code> |
-| **`bucket`**    | <code>string</code>                |
+| **`dataType`**  | <code>'steps' \| 'active-calories' \| 'hrv' \| 'resting-heart-rate' \| 'stand-time'</code> |
+| **`bucket`**    | <code>'hour' \| 'day' \| 'week'</code>                                                     |
 
 
 #### QueryWorkoutResponse
@@ -308,6 +308,6 @@ Query workouts
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_RESTING_HEART_RATE' | 'READ_HRV' | 'READ_STAND_TIME'</code>
 
 </docgen-api>
