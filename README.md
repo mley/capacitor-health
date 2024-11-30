@@ -74,6 +74,7 @@ npx cap sync
 * [`openHealthConnectSettings()`](#openhealthconnectsettings)
 * [`showHealthConnectInPlayStore()`](#showhealthconnectinplaystore)
 * [`queryAggregated(...)`](#queryaggregated)
+* [`querySamples(...)`](#querysamples)
 * [`queryWorkouts(...)`](#queryworkouts)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
@@ -190,6 +191,22 @@ Query aggregated data
 
 --------------------
 
+### querySamples(...)
+
+```typescript
+querySamples(request: QuerySamplesRequest) => Promise<QuerySamplesResponse>
+```
+
+Query samples data
+
+| Param         | Type                                                                      |
+| ------------- | ------------------------------------------------------------------------- |
+| **`request`** | <code><a href="#querysamplesrequest">QuerySamplesRequest</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#querysamplesresponse">QuerySamplesResponse</a>&gt;</code>
+
+--------------------
+
 
 ### queryWorkouts(...)
 
@@ -247,8 +264,30 @@ Query workouts
 | --------------- | ---------------------------------- |
 | **`startDate`** | <code>string</code>                |
 | **`endDate`**   | <code>string</code>                |
-| **`dataType`**  | <code>'steps' \| 'calories'</code> |
-| **`bucket`**    | <code>string</code>                |
+| **`dataType`**  | <code>'steps' \| 'active-calories'</code> |
+| **`bucket`**    | <code>'hour' \| 'day' \| 'week'</code>                                                     |
+
+#### QuerySamplesResponse
+| Prop            | Type                               |
+| --------------- | ---------------------------------- |
+| **`startDate`** | <code>string</code>                |
+| **`endDate`**   | <code>string</code>                |
+| **`dataType`**  | <code>'hrv' \| 'resting-heart-rate' \| 'stand-time'</code> |
+
+
+#### Sample
+| Prop            | Type                |
+| --------------- | ------------------- |
+| **`startDate`** | <code>string</code> |
+| **`endDate`**   | <code>string</code> |
+| **`value`**     | <code>number</code> |
+
+
+#### QuerySamplesRequest
+
+| Prop                 | Type                            |
+| -------------------- | ------------------------------- |
+| **`samples`** | <code>Sample[]</code> |
 
 
 #### QueryWorkoutResponse
@@ -308,6 +347,6 @@ Query workouts
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_RESTING_HEART_RATE' | 'READ_HRV' | 'READ_STAND_TIME'</code>
 
 </docgen-api>
