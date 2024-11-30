@@ -117,10 +117,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func querySamples(_ call: CAPPluginCall) {
         guard let startDateString = call.getString("startDate"),
-            let endDateString = call.getString("endDate"),
-            let dataTypeString = call.getString("dataType"),
-            let startDate = self.isoDateFormatter.date(from: startDateString),
-            let endDate = self.isoDateFormatter.date(from: endDateString) else {
+              let endDateString = call.getString("endDate"),
+              let dataTypeString = call.getString("dataType"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
             call.reject("Invalid parameters")
             return
         }
@@ -164,7 +164,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     results.append([
                         "startDate": sample.startDate.timeIntervalSince1970 * 1000,
                         "endDate": sample.endDate.timeIntervalSince1970 * 1000,
-                        "value": sample.quantity.doubleValue(for: unit),
+                        "value": sample.quantity.doubleValue(for: unit)
                     ])
                 }
             }
@@ -174,7 +174,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         healthStore.execute(query)
     }
-
 
     @objc func queryAggregated(_ call: CAPPluginCall) {
         guard let startDateString = call.getString("startDate"),
@@ -294,17 +293,16 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     func supportedOptionsForType(_ dataType: HKQuantityType) -> HKStatisticsOptions {
         switch dataType.identifier {
         case HKQuantityTypeIdentifier.stepCount.rawValue,
-            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
+             HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
             return .cumulativeSum
         case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
-            HKQuantityTypeIdentifier.restingHeartRate.rawValue,
-            HKQuantityTypeIdentifier.appleStandTime.rawValue:
+             HKQuantityTypeIdentifier.restingHeartRate.rawValue,
+             HKQuantityTypeIdentifier.appleStandTime.rawValue:
             return .discreteAverage
         default:
             return .cumulativeSum
         }
     }
-
 
     var isoDateFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
