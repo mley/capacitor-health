@@ -220,16 +220,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     let endDate = statistics.endDate.timeIntervalSince1970 * 1000
 
                     var value: Double = -1.0
-                    if dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count()) {
+                    if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
                         value = sum.doubleValue(for: HKUnit.count())
-                    } else if dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie()) {
+                    } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
                         value = sum.doubleValue(for: HKUnit.kilocalorie())
-                    } else if dataTypeString == "hrv" && dataType.is(compatibleWith: HKUnit.second()) {
-                        value = sum.doubleValue(for: HKUnit.second())
-                    } else if dataTypeString == "resting-heart-rate" && dataType.is(compatibleWith: HKUnit.count().unitDivided(by: HKUnit.minute())) {
-                        value = sum.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
-                    } else if dataTypeString == "stand-time" && dataType.is(compatibleWith: HKUnit.second()) {
-                        value = sum.doubleValue(for: HKUnit.second())
                     }
 
                     aggregatedSamples.append([
