@@ -104,12 +104,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .stepCount)
         case "active-calories":
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
-        case "hrv":
-            return HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
-        case "resting-heart-rate":
-            return HKObjectType.quantityType(forIdentifier: .restingHeartRate)
-        case "stand-time":
-            return HKObjectType.quantityType(forIdentifier: .appleStandTime)
         default:
             return nil
         }
