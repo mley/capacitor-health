@@ -55,6 +55,12 @@ export interface HealthPlugin {
    * @param request
    */
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
+
+  /**
+   * Query samples
+   * @param request
+   */
+  querySamples(request: QuerySamplesRequest): Promise<QuerySamplesResponse>;
 }
 
 export declare type HealthPermission =
@@ -125,6 +131,22 @@ export interface QueryAggregatedResponse {
 }
 
 export interface AggregatedSample {
+  startDate: string;
+  endDate: string;
+  value: number;
+}
+
+export interface QuerySamplesRequest {
+  startDate: string;
+  endDate: string;
+  dataType: string;
+}
+
+export interface QuerySamplesResponse {
+  samples: Sample[];
+}
+
+export interface Sample {
   startDate: string;
   endDate: string;
   value: number;

@@ -16,7 +16,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestHealthPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "querySamples", returnType: CAPPluginReturnPromise)
     ]
 
     let healthStore = HKHealthStore()
@@ -114,6 +115,67 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func querySamples(_ call: CAPPluginCall) {
+        guard let startDateString = call.getString("startDate"),
+            let endDateString = call.getString("endDate"),
+            let dataTypeString = call.getString("dataType"),
+            let startDate = self.isoDateFormatter.date(from: startDateString),
+            let endDate = self.isoDateFormatter.date(from: endDateString) else {
+            call.reject("Invalid parameters")
+            return
+        }
+
+        guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
+            call.reject("Invalid data type")
+            return
+        }
+
+        // Create a predicate to filter samples by date range
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        // Create a sample query
+        let query = HKSampleQuery(sampleType: dataType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+            if let error = error {
+                call.reject("Error fetching samples: \(error.localizedDescription)")
+                return
+            }
+
+            var results: [[String: Any]] = []
+
+            if let quantitySamples = samples as? [HKQuantitySample] {
+                for sample in quantitySamples {
+                    let unit: HKUnit
+
+                    switch dataTypeString {
+                    case "steps":
+                        unit = HKUnit.count()
+                    case "active-calories":
+                        unit = HKUnit.kilocalorie()
+                    case "hrv":
+                        unit = HKUnit.second()
+                    case "resting-heart-rate":
+                        unit = HKUnit.count().unitDivided(by: HKUnit.minute())
+                    case "stand-time":
+                        unit = HKUnit.second()
+                    default:
+                        unit = HKUnit.count() // Default to count
+                    }
+
+                    results.append([
+                        "startDate": sample.startDate.timeIntervalSince1970 * 1000,
+                        "endDate": sample.endDate.timeIntervalSince1970 * 1000,
+                        "value": sample.quantity.doubleValue(for: unit),
+                    ])
+                }
+            }
+
+            call.resolve(["samples": results])
+        }
+
+        healthStore.execute(query)
+    }
+
+
     @objc func queryAggregated(_ call: CAPPluginCall) {
         guard let startDateString = call.getString("startDate"),
               let endDateString = call.getString("endDate"),
@@ -127,6 +189,12 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
             call.reject("Invalid data type")
+            return
+        }
+
+        let statisticOptions = supportedOptionsForType(dataType)
+        if statisticOptions.isEmpty {
+            call.reject("Unsupported statistic options for data type: \(dataTypeString)")
             return
         }
 
@@ -222,6 +290,21 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return nil
         }
     }
+
+    func supportedOptionsForType(_ dataType: HKQuantityType) -> HKStatisticsOptions {
+        switch dataType.identifier {
+        case HKQuantityTypeIdentifier.stepCount.rawValue,
+            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:
+            return .cumulativeSum
+        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
+            HKQuantityTypeIdentifier.restingHeartRate.rawValue,
+            HKQuantityTypeIdentifier.appleStandTime.rawValue:
+            return .discreteAverage
+        default:
+            return .cumulativeSum
+        }
+    }
+
 
     var isoDateFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
