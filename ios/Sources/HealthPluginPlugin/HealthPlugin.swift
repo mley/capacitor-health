@@ -87,6 +87,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning),
                 HKObjectType.quantityType(forIdentifier: .distanceDownhillSnowSports)
             ].compactMap{$0}
+        case "READ_MINDFULNESS":
+            return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
         default:
             return []
         }
@@ -115,62 +117,122 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        
-        guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
-            call.reject("Invalid data type")
-            return
-        }
-        
-        
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-        
-        guard let interval = calculateInterval(bucket: bucket) else {
-            call.reject("Invalid bucket")
-            return
-        }
-        
-        let query = HKStatisticsCollectionQuery(
-            quantityType: dataType,
-            quantitySamplePredicate: predicate,
-            options: [.cumulativeSum],
-            anchorDate: startDate,
-            intervalComponents: interval
-        )
-        
-        query.initialResultsHandler = { query, result, error in
-            if let error = error {
-                call.reject("Error fetching aggregated data: \(error.localizedDescription)")
+        if(dataTypeString == "mindfulness") {
+            self.queryMindfulnessAggregated(startDate: startDate, endDate: endDate) {result, error in
+                    if let error = error {
+                    call.reject(error.localizedDescription)
+                } else if let result = result {
+                    call.resolve(["aggregatedData": result])
+                }
+            }
+        } else {
+            
+            guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
+                call.reject("Invalid data type")
                 return
             }
             
-            var aggregatedSamples: [[String: Any]] = []
             
-            result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
-                if let sum = statistics.sumQuantity() {
-                    let startDate = statistics.startDate.timeIntervalSince1970 * 1000
-                    let endDate = statistics.endDate.timeIntervalSince1970 * 1000
-                    
-                    var value: Double = -1.0
-                    if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
-                        value = sum.doubleValue(for: HKUnit.count())
-                    } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
-                        value = sum.doubleValue(for: HKUnit.kilocalorie())
-                    }
-                   
-                    
-                    aggregatedSamples.append([
-                        "startDate": startDate,
-                        "endDate": endDate,
-                        "value": value
-                    ])
-                }
+            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+            
+            guard let interval = calculateInterval(bucket: bucket) else {
+                call.reject("Invalid bucket")
+                return
             }
             
-            call.resolve(["aggregatedData": aggregatedSamples])
+            let query = HKStatisticsCollectionQuery(
+                quantityType: dataType,
+                quantitySamplePredicate: predicate,
+                options: [.cumulativeSum],
+                anchorDate: startDate,
+                intervalComponents: interval
+            )
+            
+            query.initialResultsHandler = { query, result, error in
+                if let error = error {
+                    call.reject("Error fetching aggregated data: \(error.localizedDescription)")
+                    return
+                }
+                
+                var aggregatedSamples: [[String: Any]] = []
+                
+                result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
+                    if let sum = statistics.sumQuantity() {
+                        let startDate = statistics.startDate.timeIntervalSince1970 * 1000
+                        let endDate = statistics.endDate.timeIntervalSince1970 * 1000
+                        
+                        var value: Double = -1.0
+                        if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
+                            value = sum.doubleValue(for: HKUnit.count())
+                        } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
+                            value = sum.doubleValue(for: HKUnit.kilocalorie())
+                        } else if(dataTypeString == "mindfulness" && dataType.is(compatibleWith: HKUnit.second())) {
+                            value = sum.doubleValue(for: HKUnit.second())
+                        }
+                        
+                        
+                        aggregatedSamples.append([
+                            "startDate": startDate,
+                            "endDate": endDate,
+                            "value": value
+                        ])
+                    }
+                }
+                
+                call.resolve(["aggregatedData": aggregatedSamples])
+            }
+            
+            healthStore.execute(query)
         }
-        
+    }
+    
+    func queryMindfulnessAggregated(startDate: Date, endDate: Date, completion: @escaping ([[String: Any]]?, Error?) -> Void) {
+        guard let mindfulType = HKObjectType.categoryType(forIdentifier: .mindfulSession) else {
+            completion(nil, NSError(domain: "HealthKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "MindfulSession type unavailable"]))
+            return
+        }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let query = HKSampleQuery(sampleType: mindfulType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+            guard let categorySamples = samples as? [HKCategorySample], error == nil else {
+                completion(nil, error)
+                return
+            }
+
+            // Aggregate total time per day
+            
+            var dailyDurations: [Date: TimeInterval] = [:]
+            let calendar = Calendar.current
+
+            for sample in categorySamples {
+                let startOfDay = calendar.startOfDay(for: sample.startDate)
+                let duration = sample.endDate.timeIntervalSince(sample.startDate)
+
+                if let existingDuration = dailyDurations[startOfDay] {
+                    dailyDurations[startOfDay] = existingDuration + duration
+                } else {
+                    dailyDurations[startOfDay] = duration
+                }
+            }
+
+            var aggregatedSamples: [[String: Any]] = []
+            var dayComponent = DateComponents()
+            dayComponent.day = 1
+            dailyDurations.forEach { (dateAndDuration) in
+                aggregatedSamples.append([
+                    "startDate": dateAndDuration.key,
+                    "endDate": calendar.date(byAdding: dayComponent, to: dateAndDuration.key),
+                    "value": dateAndDuration.value
+                ])
+            }
+            
+            completion(aggregatedSamples, nil)
+        }
+
         healthStore.execute(query)
     }
+    
+    
     
     private func queryAggregated(for startDate: Date, for endDate: Date, for dataType: HKQuantityType?, completion: @escaping(Double?) -> Void) {
         
@@ -197,6 +259,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         healthStore.execute(query)
         
     }
+    
+
     
     
     

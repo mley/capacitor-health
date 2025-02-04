@@ -64,7 +64,8 @@ export declare type HealthPermission =
   | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
   | 'READ_HEART_RATE'
-  | 'READ_ROUTE';
+  | 'READ_ROUTE'
+  | 'READ_MINDFULNESS';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
@@ -116,7 +117,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'active-calories';
+  dataType: 'steps' | 'active-calories' | 'mindfulness';
   bucket: string;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "capacitor-health",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Capacitor plugin for Apple Health and Google Health Connect",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
