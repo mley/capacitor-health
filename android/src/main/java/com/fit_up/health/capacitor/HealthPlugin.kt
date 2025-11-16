@@ -18,6 +18,7 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -41,7 +42,14 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.jvm.optionals.getOrDefault
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE;
+    READ_STEPS,
+    READ_WORKOUTS,
+    READ_HEART_RATE,
+    READ_ROUTE,
+    READ_ACTIVE_CALORIES,
+    READ_TOTAL_CALORIES,
+    READ_DISTANCE,
+    READ_WEIGHT;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -77,6 +85,10 @@ enum class CapHealthPermission {
         Permission(
             alias = "READ_TOTAL_CALORIES",
             strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]
+        ),
+        Permission(
+            alias = "READ_WEIGHT",
+            strings = ["android.permission.health.READ_WEIGHT"]
         ),
         Permission(
             alias = "READ_HEART_RATE",
@@ -141,6 +153,7 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_ACTIVE_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
+        Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT"),
         Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS")
     )
 
@@ -255,6 +268,11 @@ class HealthPlugin : Plugin() {
                 TotalCaloriesBurnedRecord.ENERGY_TOTAL
             ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
+            "weight" -> metricAndMapper(
+                "weight",
+                CapHealthPermission.READ_WEIGHT,
+                WeightRecord.WEIGHT_AVG
+            ) { it?.inKilograms }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
     }

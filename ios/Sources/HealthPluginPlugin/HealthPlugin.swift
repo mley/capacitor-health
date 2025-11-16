@@ -89,6 +89,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             ].compactMap{$0}
         case "READ_MINDFULNESS":
             return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
+        case "READ_WEIGHT":
+            return [HKObjectType.quantityType(forIdentifier: .bodyMass)].compactMap{$0}
         default:
             return []
         }
@@ -100,6 +102,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .stepCount)
         case "active-calories":
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+        case "weight":
+            return HKObjectType.quantityType(forIdentifier: .bodyMass)
         default:
             return nil
         }
@@ -140,10 +144,12 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             
+            let queryOptions: HKStatisticsOptions = dataTypeString == "weight" ? .discreteAverage : .cumulativeSum
+
             let query = HKStatisticsCollectionQuery(
                 quantityType: dataType,
                 quantitySamplePredicate: predicate,
-                options: [.cumulativeSum],
+                options: queryOptions,
                 anchorDate: startDate,
                 intervalComponents: interval
             )
@@ -156,28 +162,34 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 
                 var aggregatedSamples: [[String: Any]] = []
                 
-                result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
-                    if let sum = statistics.sumQuantity() {
-                        let startDate = statistics.startDate.timeIntervalSince1970 * 1000
-                        let endDate = statistics.endDate.timeIntervalSince1970 * 1000
-                        
-                        var value: Double = -1.0
-                        if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
-                            value = sum.doubleValue(for: HKUnit.count())
-                        } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
-                            value = sum.doubleValue(for: HKUnit.kilocalorie())
-                        } else if(dataTypeString == "mindfulness" && dataType.is(compatibleWith: HKUnit.second())) {
-                            value = sum.doubleValue(for: HKUnit.second())
-                        }
-                        
-                        
-                        aggregatedSamples.append([
-                            "startDate": startDate,
-                            "endDate": endDate,
-                            "value": value
-                        ])
+            let weightUnit = HKUnit.gramUnit(with: .kilo)
+            result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
+                var value: Double?
+                if dataTypeString == "weight" && dataType.is(compatibleWith: weightUnit) {
+                    if let average = statistics.averageQuantity() {
+                        value = average.doubleValue(for: weightUnit)
+                    }
+                } else if let sum = statistics.sumQuantity() {
+                    if dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count()) {
+                        value = sum.doubleValue(for: HKUnit.count())
+                    } else if dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie()) {
+                        value = sum.doubleValue(for: HKUnit.kilocalorie())
+                    } else if dataTypeString == "mindfulness" && dataType.is(compatibleWith: HKUnit.second()) {
+                        value = sum.doubleValue(for: HKUnit.second())
                     }
                 }
+
+                if let finalValue = value {
+                    let startDate = statistics.startDate.timeIntervalSince1970 * 1000
+                    let endDate = statistics.endDate.timeIntervalSince1970 * 1000
+
+                    aggregatedSamples.append([
+                        "startDate": startDate,
+                        "endDate": endDate,
+                        "value": finalValue
+                    ])
+                }
+            }
                 
                 call.resolve(["aggregatedData": aggregatedSamples])
             }

@@ -61,6 +61,7 @@ npx cap sync
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
 ```
 
 ## API
@@ -247,7 +248,7 @@ Query workouts
 | --------------- | ---------------------------------- |
 | **`startDate`** | <code>string</code>                |
 | **`endDate`**   | <code>string</code>                |
-| **`dataType`**  | <code>'steps' \| 'calories'</code> |
+| **`dataType`**  | <code>'steps' \| 'active-calories' \| 'mindfulness' \| 'weight'</code> |
 | **`bucket`**    | <code>string</code>                |
 
 
@@ -308,6 +309,6 @@ Query workouts
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_WEIGHT'</code>
 
 </docgen-api>
