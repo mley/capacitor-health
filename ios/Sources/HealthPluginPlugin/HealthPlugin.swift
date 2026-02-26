@@ -38,9 +38,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let types: [HKObjectType] = permissions.flatMap { permissionToHKObjectType($0) }
-        
-        healthStore.requestAuthorization(toShare: nil, read: Set(types)) { success, error in
+      let readTypes: [HKObjectType] = permissions.flatMap { permissionToHKObjectReadType($0) }
+      let shareTypes: [HKSampleType] = permissions.flatMap { permissionToHKObjectWriteType($0) }
+      
+      healthStore.requestAuthorization(toShare: Set(shareTypes), read: Set(readTypes)) { success, error in
             if success {
                 //we don't know which actual permissions were granted, so we assume all
                 var result: [String: Bool] = [:]
@@ -68,8 +69,17 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
     
+  func permissionToHKObjectWriteType(_ permission: String) -> [HKSampleType] {
+    switch(permission) {
+      case "WRITE_WORKOUTS":
+        return [HKObjectType.workoutType()].compactMap{$0}
+      default:
+        return []
+    }
+  }
+  
     // Permission helpers
-    func permissionToHKObjectType(_ permission: String) -> [HKObjectType] {
+    func permissionToHKObjectReadType(_ permission: String) -> [HKObjectType] {
         switch permission {
         case "READ_STEPS":
             return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}

@@ -71,6 +71,7 @@ export interface HealthPlugin {
 export declare type HealthPermission =
   | 'READ_STEPS'
   | 'READ_WORKOUTS'
+  | 'WRITE_WORKOUTS' //needed for iOS, because the Watch App writes workouts
   | 'READ_ACTIVE_CALORIES'
   | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
