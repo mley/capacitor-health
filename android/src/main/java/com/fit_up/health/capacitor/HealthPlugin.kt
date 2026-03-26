@@ -18,6 +18,7 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -282,11 +283,12 @@ class HealthPlugin : Plugin() {
                 else -> throw RuntimeException("Unsupported bucket: $bucket")
             }
 
+            val dataOrigins = parseDataOrigins(call)
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
 
-                    val r = queryAggregatedMetric(metricAndMapper, TimeRangeFilter.between(startDateTime, endDateTime), period)
+                    val r = queryAggregatedMetric(metricAndMapper, TimeRangeFilter.between(startDateTime, endDateTime), period, dataOrigins)
 
                     val aggregatedList = JSArray()
                     r.forEach { aggregatedList.put(it.toJs()) }
@@ -341,6 +343,7 @@ class HealthPlugin : Plugin() {
 
     private suspend fun queryAggregatedMetric(
         metricAndMapper: MetricAndMapper, timeRange: TimeRangeFilter, period: Period,
+        dataOrigins: Set<DataOrigin> = emptySet(),
     ): List<AggregatedSample> {
         if (!hasPermission(metricAndMapper.permission)) {
             return emptyList()
@@ -350,7 +353,8 @@ class HealthPlugin : Plugin() {
             AggregateGroupByPeriodRequest(
                 metrics = setOf(metricAndMapper.metric),
                 timeRangeFilter = timeRange,
-                timeRangeSlicer = period
+                timeRangeSlicer = period,
+                dataOriginsFilter = dataOrigins
             )
         )
 
@@ -359,6 +363,68 @@ class HealthPlugin : Plugin() {
             AggregatedSample(it.startTime, it.endTime, mappedValue)
         }
 
+    }
+
+    private fun parseDataOrigins(call: PluginCall): Set<DataOrigin> {
+        val originsArray = call.getArray("dataOrigins") ?: return emptySet()
+        return (0 until originsArray.length())
+            .map { originsArray.getString(it) }
+            .filter { it.isNotEmpty() }
+            .map { DataOrigin(it) }
+            .toSet()
+    }
+
+    @PluginMethod
+    fun queryRecords(call: PluginCall) {
+        try {
+            val startDate = call.getString("startDate")
+            val endDate = call.getString("endDate")
+            val dataType = call.getString("dataType")
+
+            if (startDate == null || endDate == null || dataType == null) {
+                call.reject("Missing required parameters: startDate, endDate, or dataType")
+                return
+            }
+
+            if (dataType != "steps") {
+                call.reject("queryRecords currently only supports dataType 'steps'")
+                return
+            }
+
+            if (!hasPermission(CapHealthPermission.READ_STEPS)) {
+                call.reject("READ_STEPS permission not granted")
+                return
+            }
+
+            val startInstant = Instant.parse(startDate)
+            val endInstant = Instant.parse(endDate)
+            val timeRange = TimeRangeFilter.between(startInstant, endInstant)
+            val request = ReadRecordsRequest(StepsRecord::class, timeRange)
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val response = healthConnectClient.readRecords(request)
+                    val recordsArray = JSArray()
+
+                    for (record in response.records) {
+                        val obj = JSObject()
+                        obj.put("startDate", record.startTime.toString())
+                        obj.put("endDate", record.endTime.toString())
+                        obj.put("value", record.count)
+                        obj.put("sourceBundleId", record.metadata.dataOrigin.packageName)
+                        recordsArray.put(obj)
+                    }
+
+                    val result = JSObject()
+                    result.put("records", recordsArray)
+                    call.resolve(result)
+                } catch (e: Exception) {
+                    call.reject("Error querying records: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            call.reject(e.message)
+        }
     }
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {

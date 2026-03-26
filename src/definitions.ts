@@ -55,6 +55,17 @@ export interface HealthPlugin {
    * @param request
    */
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
+
+  /**
+   * Query individual records for a given data type. Unlike queryAggregated,
+   * this returns each record separately with its data origin, which is useful
+   * for detecting duplicate sources.
+   *
+   * Android only. iOS rejects with "not implemented".
+   *
+   * @param request
+   */
+  queryRecords(request: QueryRecordsRequest): Promise<QueryRecordsResponse>;
 }
 
 export declare type HealthPermission =
@@ -119,6 +130,15 @@ export interface QueryAggregatedRequest {
   endDate: string;
   dataType: 'steps' | 'active-calories' | 'mindfulness';
   bucket: string;
+  /**
+   * Optional list of package names (Android) or bundle identifiers (iOS) to
+   * restrict the aggregation to. When omitted or empty, data from all sources
+   * is included.
+   *
+   * Example: `['com.sec.android.app.shealth']` to only aggregate Samsung
+   * Health data.
+   */
+  dataOrigins?: string[];
 }
 
 export interface QueryAggregatedResponse {
@@ -129,4 +149,21 @@ export interface AggregatedSample {
   startDate: string;
   endDate: string;
   value: number;
+}
+
+export interface QueryRecordsRequest {
+  startDate: string;
+  endDate: string;
+  dataType: 'steps';
+}
+
+export interface HealthRecord {
+  startDate: string;
+  endDate: string;
+  value: number;
+  sourceBundleId: string;
+}
+
+export interface QueryRecordsResponse {
+  records: HealthRecord[];
 }
