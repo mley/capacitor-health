@@ -604,36 +604,59 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         var stageValue = "UNKNOWN"
                         var isAwake = false
                         
-                        switch sample.value {
-                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                            stageValue = "OUT_OF_BED"
-                            isAwake = true
-                            awakeTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.awake.rawValue:
-                            stageValue = "AWAKE"
-                            isAwake = true
-                            awakeTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
-                            stageValue = "SLEEPING"
-                            sleepTime += stageDuration
-                            lightSleepTime += stageDuration  // Default to light sleep if not specified
-                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            stageValue = "LIGHT"
-                            sleepTime += stageDuration
-                            lightSleepTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            stageValue = "DEEP"
-                            sleepTime += stageDuration
-                            deepSleepTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            stageValue = "REM"
-                            sleepTime += stageDuration
-                            remSleepTime += stageDuration
-                        default:
-                            stageValue = "UNKNOWN"
-                            if !isAwake {
+                        if #available(iOS 16.0, *) {
+                            switch sample.value {
+                            case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                                stageValue = "OUT_OF_BED"
+                                isAwake = true
+                                awakeTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.awake.rawValue:
+                                stageValue = "AWAKE"
+                                isAwake = true
+                                awakeTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                                stageValue = "SLEEPING"
                                 sleepTime += stageDuration
                                 lightSleepTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
+                                stageValue = "LIGHT"
+                                sleepTime += stageDuration
+                                lightSleepTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                                stageValue = "DEEP"
+                                sleepTime += stageDuration
+                                deepSleepTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                                stageValue = "REM"
+                                sleepTime += stageDuration
+                                remSleepTime += stageDuration
+                            default:
+                                stageValue = "UNKNOWN"
+                                if !isAwake {
+                                    sleepTime += stageDuration
+                                    lightSleepTime += stageDuration
+                                }
+                            }
+                        } else {
+                            switch sample.value {
+                            case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                                stageValue = "OUT_OF_BED"
+                                isAwake = true
+                                awakeTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.awake.rawValue:
+                                stageValue = "AWAKE"
+                                isAwake = true
+                                awakeTime += stageDuration
+                            case HKCategoryValueSleepAnalysis.asleep.rawValue:
+                                stageValue = "SLEEPING"
+                                sleepTime += stageDuration
+                                lightSleepTime += stageDuration
+                            default:
+                                stageValue = "UNKNOWN"
+                                if !isAwake {
+                                    sleepTime += stageDuration
+                                    lightSleepTime += stageDuration
+                                }
                             }
                         }
                         
