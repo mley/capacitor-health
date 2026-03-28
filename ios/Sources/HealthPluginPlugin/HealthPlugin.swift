@@ -613,19 +613,19 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                             stageValue = "AWAKE"
                             isAwake = true
                             awakeTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.asleep.rawValue:
+                        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
                             stageValue = "SLEEPING"
                             sleepTime += stageDuration
                             lightSleepTime += stageDuration  // Default to light sleep if not specified
-                        case HKCategoryValueSleepAnalysis.core.rawValue:
+                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
                             stageValue = "LIGHT"
                             sleepTime += stageDuration
                             lightSleepTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.deep.rawValue:
+                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
                             stageValue = "DEEP"
                             sleepTime += stageDuration
                             deepSleepTime += stageDuration
-                        case HKCategoryValueSleepAnalysis.rem.rawValue:
+                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
                             stageValue = "REM"
                             sleepTime += stageDuration
                             remSleepTime += stageDuration
@@ -692,7 +692,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        requestAuthorization { (success, error) in
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .height)!
+        ]
+        
+        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { (success, error) in
             if let error = error {
                 call.reject("Failed to get authorization: \(error.localizedDescription)")
                 return
@@ -713,7 +717,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        requestAuthorization { (success, error) in
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .bodyMass)!
+        ]
+        
+        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { (success, error) in
             if let error = error {
                 call.reject("Failed to get authorization: \(error.localizedDescription)")
                 return
@@ -818,7 +826,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        requestAuthorization { (success, error) in
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .bodyTemperature)!
+        ]
+        
+        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { (success, error) in
             if let error = error {
                 call.reject("Failed to get authorization: \(error.localizedDescription)")
                 return
