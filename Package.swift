@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "CapacitorHealth",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(
             name: "CapacitorHealth",
