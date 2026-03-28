@@ -20,7 +20,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "querySleepData", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryHeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWeight", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryBodyTemperature", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryBodyTemperature", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -908,6 +909,70 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         healthStore.execute(query)
+    }
+    
+    @objc func queryHeartRate(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("Health data is not available on this device")
+            return
+        }
+        
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
+            call.reject("Missing required parameters: startDate or endDate")
+            return
+        }
+        
+        guard let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            call.reject("Heart rate type is not available")
+            return
+        }
+        
+        let typesToRead: Set<HKObjectType> = [heartRateType]
+        
+        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { (success, error) in
+            if let error = error {
+                call.reject("Failed to get authorization: \(error.localizedDescription)")
+                return
+            }
+            
+            guard success else {
+                call.reject("Authorization failed")
+                return
+            }
+            
+            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            
+            let query = HKSampleQuery(sampleType: heartRateType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                if let error = error {
+                    call.reject("Error querying heart rate: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let heartRateSamples = samples as? [HKQuantitySample] else {
+                    call.resolve(["heartRateSamples": []])
+                    return
+                }
+                
+                let heartRateUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
+                let dateFormatter = ISO8601DateFormatter()
+                
+                var samplesArray: [[String: Any]] = []
+                for sample in heartRateSamples {
+                    samplesArray.append([
+                        "timestamp": dateFormatter.string(from: sample.startDate),
+                        "bpm": sample.quantity.doubleValue(for: heartRateUnit)
+                    ])
+                }
+                
+                call.resolve(["heartRateSamples": samplesArray])
+            }
+            
+            self.healthStore.execute(query)
+        }
     }
     
     let workoutTypeMapping: [UInt : String] =  [

@@ -825,6 +825,54 @@ class HealthPlugin : Plugin() {
     }
     
     @PluginMethod
+    fun queryHeartRate(call: PluginCall) {
+        val startDate = call.getString("startDate")
+        val endDate = call.getString("endDate")
+        if (startDate == null || endDate == null) {
+            call.reject("Missing required parameters: startDate or endDate")
+            return
+        }
+
+        try {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    if (!hasPermission(CapHealthPermission.READ_HEART_RATE)) {
+                        call.reject("Heart rate permission not granted")
+                        return@launch
+                    }
+
+                    val startInstant = Instant.parse(startDate)
+                    val endInstant = Instant.parse(endDate)
+
+                    val request = ReadRecordsRequest(
+                        HeartRateRecord::class,
+                        TimeRangeFilter.between(startInstant, endInstant)
+                    )
+                    val heartRateRecords = healthConnectClient.readRecords(request)
+
+                    val heartRateArray = JSArray()
+                    val samples = heartRateRecords.records.flatMap { it.samples }
+                    for (sample in samples) {
+                        val heartRateObject = JSObject()
+                        heartRateObject.put("timestamp", sample.time.toString())
+                        heartRateObject.put("bpm", sample.beatsPerMinute)
+                        heartRateArray.put(heartRateObject)
+                    }
+
+                    val result = JSObject()
+                    result.put("heartRateSamples", heartRateArray)
+                    call.resolve(result)
+
+                } catch (e: Exception) {
+                    call.reject("Error reading heart rate data: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            call.reject(e.message)
+        }
+    }
+
+    @PluginMethod
     fun queryBodyTemperature(call: PluginCall) {
         try {
             CoroutineScope(Dispatchers.IO).launch {

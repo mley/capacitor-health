@@ -78,6 +78,12 @@ export interface HealthPlugin {
    * @since 0.0.1
    */
   queryBodyTemperature(): Promise<BodyTemperatureData>;
+
+  /**
+   * Query heart rate data directly (not tied to a workout)
+   * @param request date range to query
+   */
+  queryHeartRate(request: QueryHeartRateRequest): Promise<QueryHeartRateResponse>;
 }
 
 export declare type HealthPermission =
@@ -211,6 +217,15 @@ export interface WeightData {
     clientRecordId: string;
     dataOrigin: string;
   };
+}
+
+export interface QueryHeartRateRequest {
+  startDate: string;
+  endDate: string;
+}
+
+export interface QueryHeartRateResponse {
+  heartRateSamples: HeartRateSample[];
 }
 
 export interface BodyTemperatureData {
