@@ -69,6 +69,11 @@ export interface HealthPlugin {
      * @since 0.0.1
      */
     queryBodyTemperature(): Promise<BodyTemperatureData>;
+    /**
+     * Query heart rate data directly (not tied to a workout)
+     * @param request date range to query
+     */
+    queryHeartRate(request: QueryHeartRateRequest): Promise<QueryHeartRateResponse>;
 }
 export declare type HealthPermission = 'READ_STEPS' | 'READ_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_SLEEP' | 'READ_BODY_TEMPERATURE' | 'READ_HEIGHT' | 'READ_WEIGHT';
 export interface PermissionsRequest {
@@ -175,6 +180,13 @@ export interface WeightData {
         clientRecordId: string;
         dataOrigin: string;
     };
+}
+export interface QueryHeartRateRequest {
+    startDate: string;
+    endDate: string;
+}
+export interface QueryHeartRateResponse {
+    heartRateSamples: HeartRateSample[];
 }
 export interface BodyTemperatureData {
     /**
