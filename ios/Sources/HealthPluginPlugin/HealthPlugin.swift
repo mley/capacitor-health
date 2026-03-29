@@ -21,10 +21,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "queryHeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryBodyTemperature", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startSleepObserver", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopSleepObserver", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
+    private var sleepObserverQuery: HKObserverQuery?
     
     @objc func isHealthAvailable(_ call: CAPPluginCall) {
         let isAvailable = HKHealthStore.isHealthDataAvailable()
@@ -973,6 +976,245 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             
             self.healthStore.execute(query)
         }
+    }
+    
+    // MARK: - Sleep Background Observer
+    
+    @objc func startSleepObserver(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("Health data is not available on this device")
+            return
+        }
+        
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            call.reject("Sleep analysis not available on this device")
+            return
+        }
+        
+        // Stop existing observer if any
+        if let existingQuery = sleepObserverQuery {
+            healthStore.stop(existingQuery)
+            sleepObserverQuery = nil
+        }
+        
+        // Enable background delivery so the observer fires even when the app is suspended
+        healthStore.enableBackgroundDelivery(for: sleepType, frequency: .immediate) { success, error in
+            if let error = error {
+                print("[HealthPlugin] Background delivery error: \(error.localizedDescription)")
+            } else {
+                print("[HealthPlugin] Background delivery enabled: \(success)")
+            }
+        }
+        
+        // Create the observer query
+        let query = HKObserverQuery(sampleType: sleepType, predicate: nil) { [weak self] _, completionHandler, error in
+            if let error = error {
+                print("[HealthPlugin] Sleep observer error: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+            
+            self?.fetchLatestSleepData {
+                completionHandler()
+            }
+        }
+        
+        sleepObserverQuery = query
+        healthStore.execute(query)
+        call.resolve()
+    }
+    
+    @objc func stopSleepObserver(_ call: CAPPluginCall) {
+        if let query = sleepObserverQuery {
+            healthStore.stop(query)
+            sleepObserverQuery = nil
+        }
+        
+        if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            healthStore.disableBackgroundDelivery(for: sleepType) { success, error in
+                if let error = error {
+                    print("[HealthPlugin] Disable background delivery error: \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        call.resolve()
+    }
+    
+    private func fetchLatestSleepData(completion: @escaping () -> Void) {
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            completion()
+            return
+        }
+        
+        // Fetch last 48 hours of sleep data
+        let endDate = Date()
+        guard let startDate = Calendar.current.date(byAdding: .hour, value: -48, to: endDate) else {
+            completion()
+            return
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        
+        let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
+            guard let self = self else {
+                completion()
+                return
+            }
+            
+            if let error = error {
+                print("[HealthPlugin] Error fetching sleep data: \(error.localizedDescription)")
+                completion()
+                return
+            }
+            
+            guard let sleepSamples = samples as? [HKCategorySample], !sleepSamples.isEmpty else {
+                completion()
+                return
+            }
+            
+            // Group samples by source and date to create sleep sessions
+            let calendar = Calendar.current
+            var sleepSessionsMap: [String: [HKCategorySample]] = [:]
+            
+            for sample in sleepSamples {
+                let startDay = calendar.startOfDay(for: sample.startDate)
+                let sourceId = sample.sourceRevision.source.bundleIdentifier
+                let sessionKey = "\(sourceId)-\(Int(startDay.timeIntervalSince1970))"
+                
+                if sleepSessionsMap[sessionKey] != nil {
+                    sleepSessionsMap[sessionKey]?.append(sample)
+                } else {
+                    sleepSessionsMap[sessionKey] = [sample]
+                }
+            }
+            
+            var sleepSessionsArray: [[String: Any]] = []
+            let dateFormatter = ISO8601DateFormatter()
+            
+            for (_, samples) in sleepSessionsMap {
+                if samples.count < 1 { continue }
+                
+                let sortedSamples = samples.sorted { $0.startDate < $1.startDate }
+                
+                guard let firstSample = sortedSamples.first,
+                      let lastSample = sortedSamples.last else { continue }
+                
+                let sessionStartDate = firstSample.startDate
+                let sessionEndDate = lastSample.endDate
+                
+                var sleepSession: [String: Any] = [
+                    "id": UUID().uuidString,
+                    "sourceName": firstSample.sourceRevision.source.name,
+                    "sourceBundleId": firstSample.sourceRevision.source.bundleIdentifier,
+                    "startDate": dateFormatter.string(from: sessionStartDate),
+                    "endDate": dateFormatter.string(from: sessionEndDate),
+                    "title": "Sleep",
+                    "duration": sessionEndDate.timeIntervalSince(sessionStartDate)
+                ]
+                
+                var stagesArray: [[String: Any]] = []
+                var timeInBed: TimeInterval = 0
+                var sleepTime: TimeInterval = 0
+                var deepSleepTime: TimeInterval = 0
+                var remSleepTime: TimeInterval = 0
+                var lightSleepTime: TimeInterval = 0
+                var awakeTime: TimeInterval = 0
+                
+                for sample in sortedSamples {
+                    let stageDuration = sample.endDate.timeIntervalSince(sample.startDate)
+                    timeInBed += stageDuration
+                    
+                    var stageValue = "UNKNOWN"
+                    var isAwake = false
+                    
+                    if #available(iOS 16.0, *) {
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                            stageValue = "OUT_OF_BED"
+                            isAwake = true
+                            awakeTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.awake.rawValue:
+                            stageValue = "AWAKE"
+                            isAwake = true
+                            awakeTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                            stageValue = "SLEEPING"
+                            sleepTime += stageDuration
+                            lightSleepTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
+                            stageValue = "LIGHT"
+                            sleepTime += stageDuration
+                            lightSleepTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                            stageValue = "DEEP"
+                            sleepTime += stageDuration
+                            deepSleepTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                            stageValue = "REM"
+                            sleepTime += stageDuration
+                            remSleepTime += stageDuration
+                        default:
+                            stageValue = "UNKNOWN"
+                            if !isAwake {
+                                sleepTime += stageDuration
+                                lightSleepTime += stageDuration
+                            }
+                        }
+                    } else {
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                            stageValue = "OUT_OF_BED"
+                            isAwake = true
+                            awakeTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.awake.rawValue:
+                            stageValue = "AWAKE"
+                            isAwake = true
+                            awakeTime += stageDuration
+                        case HKCategoryValueSleepAnalysis.asleep.rawValue:
+                            stageValue = "SLEEPING"
+                            sleepTime += stageDuration
+                            lightSleepTime += stageDuration
+                        default:
+                            stageValue = "UNKNOWN"
+                            if !isAwake {
+                                sleepTime += stageDuration
+                                lightSleepTime += stageDuration
+                            }
+                        }
+                    }
+                    
+                    stagesArray.append([
+                        "startDate": dateFormatter.string(from: sample.startDate),
+                        "endDate": dateFormatter.string(from: sample.endDate),
+                        "stage": stageValue,
+                        "duration": stageDuration
+                    ])
+                }
+                
+                sleepSession["stages"] = stagesArray
+                sleepSession["timeInBed"] = timeInBed
+                sleepSession["sleepTime"] = sleepTime
+                sleepSession["deepSleepTime"] = deepSleepTime
+                sleepSession["remSleepTime"] = remSleepTime
+                sleepSession["lightSleepTime"] = lightSleepTime
+                sleepSession["awakeTime"] = awakeTime
+                
+                sleepSessionsArray.append(sleepSession)
+            }
+            
+            sleepSessionsArray.sort {
+                guard let date1 = $0["startDate"] as? String,
+                      let date2 = $1["startDate"] as? String else { return false }
+                return date1 < date2
+            }
+            
+            self.notifyListeners("sleepDataUpdated", data: ["sleepSessions": sleepSessionsArray])
+            completion()
+        }
+        
+        healthStore.execute(query)
     }
     
     let workoutTypeMapping: [UInt : String] =  [

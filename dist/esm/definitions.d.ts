@@ -74,6 +74,23 @@ export interface HealthPlugin {
      * @param request date range to query
      */
     queryHeartRate(request: QueryHeartRateRequest): Promise<QueryHeartRateResponse>;
+    /**
+     * iOS only: Starts an HKObserverQuery for sleep data with background delivery enabled.
+     * When new sleep data is written (e.g. after waking up), the plugin fires a
+     * 'sleepDataUpdated' event with the latest sleep sessions from the past 48 hours.
+     * Call requestHealthPermissions with READ_SLEEP before starting the observer.
+     */
+    startSleepObserver(): Promise<void>;
+    /**
+     * iOS only: Stops the background sleep observer query.
+     */
+    stopSleepObserver(): Promise<void>;
+    /**
+     * Listen for plugin events (e.g. 'sleepDataUpdated').
+     */
+    addListener(eventName: 'sleepDataUpdated', listenerFunc: (event: SleepUpdateEvent) => void): Promise<{
+        remove: () => Promise<void>;
+    }>;
 }
 export declare type HealthPermission = 'READ_STEPS' | 'READ_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_SLEEP' | 'READ_BODY_TEMPERATURE' | 'READ_HEIGHT' | 'READ_WEIGHT';
 export interface PermissionsRequest {
@@ -187,6 +204,9 @@ export interface QueryHeartRateRequest {
 }
 export interface QueryHeartRateResponse {
     heartRateSamples: HeartRateSample[];
+}
+export interface SleepUpdateEvent {
+    sleepSessions: SleepSession[];
 }
 export interface BodyTemperatureData {
     /**
