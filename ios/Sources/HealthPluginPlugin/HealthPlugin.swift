@@ -611,7 +611,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         if #available(iOS 16.0, *) {
                             switch sample.value {
                             case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                                stageValue = "OUT_OF_BED"
+                                stageValue = "IN_BED"
                                 isAwake = true
                                 awakeTime += stageDuration
                             case HKCategoryValueSleepAnalysis.awake.rawValue:
@@ -644,7 +644,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         } else {
                             switch sample.value {
                             case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                                stageValue = "OUT_OF_BED"
+                                stageValue = "IN_BED"
                                 isAwake = true
                                 awakeTime += stageDuration
                             case HKCategoryValueSleepAnalysis.awake.rawValue:
@@ -707,7 +707,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         0: "UNKNOWN",
         1: "AWAKE",
         2: "SLEEPING",
-        3: "OUT_OF_BED",
+        3: "IN_BED",
         4: "LIGHT",
         5: "DEEP",
         6: "REM"
@@ -1132,7 +1132,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     if #available(iOS 16.0, *) {
                         switch sample.value {
                         case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                            stageValue = "OUT_OF_BED"
+                            stageValue = "IN_BED"
                             isAwake = true
                             awakeTime += stageDuration
                         case HKCategoryValueSleepAnalysis.awake.rawValue:
@@ -1165,7 +1165,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     } else {
                         switch sample.value {
                         case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                            stageValue = "OUT_OF_BED"
+                            stageValue = "IN_BED"
                             isAwake = true
                             awakeTime += stageDuration
                         case HKCategoryValueSleepAnalysis.awake.rawValue:
