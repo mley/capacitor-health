@@ -16,7 +16,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestHealthPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryRecords", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -133,13 +134,16 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             
             
+            // Note: dataOrigins is accepted for API compatibility with Android
+            // but is not applied on iOS. Apple Health already de-duplicates data
+            // from multiple sources automatically.
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-            
+
             guard let interval = calculateInterval(bucket: bucket) else {
                 call.reject("Invalid bucket")
                 return
             }
-            
+
             let query = HKStatisticsCollectionQuery(
                 quantityType: dataType,
                 quantitySamplePredicate: predicate,
@@ -264,6 +268,12 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     
     
+    @objc func queryRecords(_ call: CAPPluginCall) {
+        // Apple Health de-duplicates data automatically, so per-source record
+        // inspection is not needed on iOS.
+        call.reject("queryRecords is only available on Android")
+    }
+
     func calculateInterval(bucket: String) -> DateComponents? {
         switch bucket {
         case "hour":
