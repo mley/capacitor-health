@@ -128,7 +128,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'active-calories' | 'mindfulness';
+  dataType: 'steps' | 'active-calories' | 'total-calories' | 'mindfulness';
   bucket: string;
   /**
    * Optional list of package names (Android) or bundle identifiers (iOS) to
