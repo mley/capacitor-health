@@ -391,18 +391,18 @@ class HealthPlugin : Plugin() {
                 return
             }
 
-            if (!hasPermission(CapHealthPermission.READ_STEPS)) {
-                call.reject("READ_STEPS permission not granted")
-                return
-            }
-
-            val startInstant = Instant.parse(startDate)
-            val endInstant = Instant.parse(endDate)
-            val timeRange = TimeRangeFilter.between(startInstant, endInstant)
-            val request = ReadRecordsRequest(StepsRecord::class, timeRange)
-
             CoroutineScope(Dispatchers.IO).launch {
                 try {
+                    if (!hasPermission(CapHealthPermission.READ_STEPS)) {
+                        call.reject("READ_STEPS permission not granted")
+                        return@launch
+                    }
+
+                    val startInstant = Instant.parse(startDate)
+                    val endInstant = Instant.parse(endDate)
+                    val timeRange = TimeRangeFilter.between(startInstant, endInstant)
+                    val request = ReadRecordsRequest(StepsRecord::class, timeRange)
+
                     val response = healthConnectClient.readRecords(request)
                     val recordsArray = JSArray()
 
@@ -412,6 +412,8 @@ class HealthPlugin : Plugin() {
                         obj.put("endDate", record.endTime.toString())
                         obj.put("value", record.count)
                         obj.put("sourceBundleId", record.metadata.dataOrigin.packageName)
+                        obj.put("sourceName", record.metadata.device?.model ?: "")
+                        obj.put("manual", record.metadata.recordingMethod == androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_MANUAL_ENTRY)
                         recordsArray.put(obj)
                     }
 

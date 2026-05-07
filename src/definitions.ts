@@ -61,8 +61,6 @@ export interface HealthPlugin {
    * this returns each record separately with its data origin, which is useful
    * for detecting duplicate sources.
    *
-   * Android only. iOS rejects with "not implemented".
-   *
    * @param request
    */
   queryRecords(request: QueryRecordsRequest): Promise<QueryRecordsResponse>;
@@ -163,6 +161,8 @@ export interface HealthRecord {
   endDate: string;
   value: number;
   sourceBundleId: string;
+  sourceName: string;
+  manual: boolean;
 }
 
 export interface QueryRecordsResponse {

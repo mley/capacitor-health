@@ -279,9 +279,54 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     
     @objc func queryRecords(_ call: CAPPluginCall) {
-        // Apple Health de-duplicates data automatically, so per-source record
-        // inspection is not needed on iOS.
-        call.reject("queryRecords is only available on Android")
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
+              let dataTypeString = call.getString("dataType"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
+            call.reject("Invalid parameters")
+            return
+        }
+        
+        guard dataTypeString == "steps" else {
+            call.reject("queryRecords currently only supports dataType 'steps'")
+            return
+        }
+        
+        guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            call.reject("Step count type not available")
+            return
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        
+        let query = HKSampleQuery(sampleType: stepCountType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+            if let error = error {
+                call.reject("Error querying records: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let quantitySamples = samples as? [HKQuantitySample] else {
+                call.resolve(["records": []])
+                return
+            }
+            
+            let records: [[String: Any]] = quantitySamples.map { sample in
+                return [
+                    "startDate": self.isoDateFormatter.string(from: sample.startDate),
+                    "endDate": self.isoDateFormatter.string(from: sample.endDate),
+                    "value": sample.quantity.doubleValue(for: HKUnit.count()),
+                    "sourceBundleId": sample.sourceRevision.source.bundleIdentifier,
+                    "sourceName": sample.sourceRevision.source.name,
+                    "manual": sample.metadata?[HKMetadataKeyWasUserEntered] as? Bool ?? false
+                ]
+            }
+            
+            call.resolve(["records": records])
+        }
+        
+        healthStore.execute(query)
     }
 
     func calculateInterval(bucket: String) -> DateComponents? {
