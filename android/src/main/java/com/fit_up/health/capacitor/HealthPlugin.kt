@@ -354,7 +354,7 @@ class HealthPlugin : Plugin() {
                 metrics = setOf(metricAndMapper.metric),
                 timeRangeFilter = timeRange,
                 timeRangeSlicer = period,
-                dataOriginsFilter = dataOrigins
+                dataOriginFilter = dataOrigins
             )
         )
 
