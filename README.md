@@ -75,6 +75,7 @@ npx cap sync
 * [`showHealthConnectInPlayStore()`](#showhealthconnectinplaystore)
 * [`queryAggregated(...)`](#queryaggregated)
 * [`queryWorkouts(...)`](#queryworkouts)
+* [`querySleep(...)`](#querysleep)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -208,6 +209,33 @@ Query workouts
 --------------------
 
 
+### querySleep(...)
+
+```typescript
+querySleep(request: QuerySleepRequest) => Promise<QuerySleepResponse>
+```
+
+Query sleep sessions.
+
+Android: Reads Health Connect `SleepSessionRecord`s. Each session already
+carries its own stages (awake / light / deep / rem / ...).
+
+iOS: HealthKit has no native sleep-session concept, only individual sleep
+analysis category samples. Contiguous samples from the same source are
+grouped into a session; samples separated by more than `sessionGapMinutes`
+(default 60) start a new session. Each underlying sample becomes a stage.
+
+Requires the `READ_SLEEP` permission.
+
+| Param         | Type                                                            |
+| ------------- | --------------------------------------------------------------- |
+| **`request`** | <code><a href="#querysleeprequest">QuerySleepRequest</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#querysleepresponse">QuerySleepResponse</a>&gt;</code>
+
+--------------------
+
+
 ### Interfaces
 
 
@@ -247,7 +275,7 @@ Query workouts
 | --------------- | ---------------------------------- |
 | **`startDate`** | <code>string</code>                |
 | **`endDate`**   | <code>string</code>                |
-| **`dataType`**  | <code>'steps' \| 'calories'</code> |
+| **`dataType`**  | <code>'steps' \| 'active-calories' \| 'mindfulness' \| 'sleep'</code> |
 | **`bucket`**    | <code>string</code>                |
 
 
@@ -303,11 +331,55 @@ Query workouts
 | **`includeRoute`**     | <code>boolean</code> |
 
 
+#### QuerySleepResponse
+
+| Prop           | Type                         |
+| -------------- | ---------------------------- |
+| **`sessions`** | <code>SleepSession[]</code>  |
+
+
+#### SleepSession
+
+| Prop                 | Type                        | Description                                                                                                                                                                                       |
+| -------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`startDate`**      | <code>string</code>         | Start of the session (start of the first stage). ISO 8601 string.                                                                                                                               |
+| **`endDate`**        | <code>string</code>         | End of the session (end of the last stage). ISO 8601 string.                                                                                                                                    |
+| **`duration`**       | <code>number</code>         | Total time asleep in seconds, i.e. the summed duration of the asleep stages (`light` + `deep` + `rem` + `asleep`). Excludes `awake`, `inBed` and `outOfBed` stages.                              |
+| **`id`**             | <code>string</code>         | Identifier of the session. On Android this is the record id.                                                                                                                                    |
+| **`sourceName`**     | <code>string</code>         |                                                                                                                                                                                                 |
+| **`sourceBundleId`** | <code>string</code>         |                                                                                                                                                                                                 |
+| **`manual`**         | <code>boolean</code>        | True if the session was entered manually by the user rather than recorded by a device.                                                                                                          |
+| **`stages`**         | <code>SleepStage[]</code>   | Per-stage breakdown of the session, ordered by start time.                                                                                                                                      |
+
+
+#### SleepStage
+
+| Prop            | Type                                                      |
+| --------------- | -------------------------------------------------------- |
+| **`startDate`** | <code>string</code>                                      |
+| **`endDate`**   | <code>string</code>                                      |
+| **`stage`**     | <code><a href="#sleepstagetype">SleepStageType</a></code> |
+
+
+#### QuerySleepRequest
+
+| Prop                    | Type                | Description                                                                                                                                                                                  |
+| ----------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`startDate`**         | <code>string</code> |                                                                                                                                                                                            |
+| **`endDate`**           | <code>string</code> |                                                                                                                                                                                            |
+| **`sessionGapMinutes`** | <code>number</code> | iOS only: maximum gap, in minutes, between two consecutive sleep samples from the same source for them to be treated as part of the same session. Defaults to 60. Ignored on Android. |
+
+
 ### Type Aliases
 
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_SLEEP'</code>
+
+
+#### SleepStageType
+
+<code>'awake' | 'asleep' | 'light' | 'deep' | 'rem' | 'inBed' | 'outOfBed' | 'unknown'</code>
 
 </docgen-api>
