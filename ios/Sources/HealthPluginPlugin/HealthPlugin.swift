@@ -17,7 +17,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryRecords", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryRecords", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "querySleep", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -90,11 +91,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             ].compactMap{$0}
         case "READ_MINDFULNESS":
             return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
+        case "READ_SLEEP":
+            return [HKObjectType.categoryType(forIdentifier: .sleepAnalysis)].compactMap{$0}
         default:
             return []
         }
     }
-    
+
     func aggregateTypeToHKQuantityType(_ dataType: String) -> HKQuantityType? {
         switch dataType {
         case "steps":
@@ -272,6 +275,138 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         // Apple Health de-duplicates data automatically, so per-source record
         // inspection is not needed on iOS.
         call.reject("queryRecords is only available on Android")
+    }
+
+    @objc func querySleep(_ call: CAPPluginCall) {
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
+            call.reject("Invalid parameters")
+            return
+        }
+
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            call.reject("Sleep analysis type not available")
+            return
+        }
+
+        // HealthKit has no native session concept, so contiguous samples from the
+        // same source less than this many minutes apart are merged into one session.
+        let gapSeconds = (call.getDouble("sessionGapMinutes") ?? 60.0) * 60.0
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+            if let error = error {
+                call.reject("Error querying sleep: \(error.localizedDescription)")
+                return
+            }
+
+            guard let categorySamples = samples as? [HKCategorySample] else {
+                call.resolve(["sessions": []])
+                return
+            }
+
+            let sessions = self.groupSleepSamplesIntoSessions(categorySamples, gapSeconds: gapSeconds)
+            call.resolve(["sessions": sessions])
+        }
+
+        healthStore.execute(query)
+    }
+
+    // Cluster samples per source, then split each source's samples into sessions
+    // wherever there is a gap larger than gapSeconds between consecutive samples.
+    private func groupSleepSamplesIntoSessions(_ samples: [HKCategorySample], gapSeconds: TimeInterval) -> [[String: Any]] {
+        var samplesBySource: [String: [HKCategorySample]] = [:]
+        for sample in samples {
+            let bundleId = sample.sourceRevision.source.bundleIdentifier
+            samplesBySource[bundleId, default: []].append(sample)
+        }
+
+        var sessions: [(start: Date, dict: [String: Any])] = []
+
+        for (_, sourceSamples) in samplesBySource {
+            let sorted = sourceSamples.sorted { $0.startDate < $1.startDate }
+            var currentGroup: [HKCategorySample] = []
+            var currentEnd: Date?
+
+            for sample in sorted {
+                if let end = currentEnd, sample.startDate.timeIntervalSince(end) > gapSeconds {
+                    sessions.append((currentGroup.first!.startDate, self.buildSleepSession(from: currentGroup)))
+                    currentGroup = []
+                    currentEnd = nil
+                }
+                currentGroup.append(sample)
+                if currentEnd == nil || sample.endDate > currentEnd! {
+                    currentEnd = sample.endDate
+                }
+            }
+
+            if !currentGroup.isEmpty {
+                sessions.append((currentGroup.first!.startDate, self.buildSleepSession(from: currentGroup)))
+            }
+        }
+
+        return sessions.sorted { $0.start < $1.start }.map { $0.dict }
+    }
+
+    private func buildSleepSession(from samples: [HKCategorySample]) -> [String: Any] {
+        let sorted = samples.sorted { $0.startDate < $1.startDate }
+        let first = sorted.first!
+        let sessionStart = first.startDate
+        let sessionEnd = sorted.map { $0.endDate }.max() ?? sessionStart
+
+        var stages: [[String: Any]] = []
+        var asleepSeconds: TimeInterval = 0
+
+        for sample in sorted {
+            let stageName = self.sleepStageName(forCategoryValue: sample.value)
+            stages.append([
+                "startDate": self.isoDateFormatter.string(from: sample.startDate),
+                "endDate": self.isoDateFormatter.string(from: sample.endDate),
+                "stage": stageName
+            ])
+            if stageName == "asleep" || stageName == "light" || stageName == "deep" || stageName == "rem" {
+                asleepSeconds += sample.endDate.timeIntervalSince(sample.startDate)
+            }
+        }
+
+        return [
+            "id": first.uuid.uuidString,
+            "startDate": self.isoDateFormatter.string(from: sessionStart),
+            "endDate": self.isoDateFormatter.string(from: sessionEnd),
+            "duration": asleepSeconds,
+            "sourceName": first.sourceRevision.source.name,
+            "sourceBundleId": first.sourceRevision.source.bundleIdentifier,
+            "manual": (first.metadata?[HKMetadataKeyWasUserEntered] as? Bool) ?? false,
+            "stages": stages
+        ]
+    }
+
+    private func sleepStageName(forCategoryValue value: Int) -> String {
+        if value == HKCategoryValueSleepAnalysis.inBed.rawValue {
+            return "inBed"
+        }
+        if #available(iOS 16.0, *) {
+            switch value {
+            case HKCategoryValueSleepAnalysis.awake.rawValue:
+                return "awake"
+            case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                return "asleep"
+            case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
+                return "light"
+            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                return "deep"
+            case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                return "rem"
+            default:
+                return "unknown"
+            }
+        }
+        // Pre-iOS 16 only exposes inBed (0) and asleep (1).
+        return value == 1 ? "asleep" : "unknown"
     }
 
     func calculateInterval(bucket: String) -> DateComponents? {

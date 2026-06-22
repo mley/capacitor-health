@@ -66,6 +66,23 @@ export interface HealthPlugin {
    * @param request
    */
   queryRecords(request: QueryRecordsRequest): Promise<QueryRecordsResponse>;
+
+  /**
+   * Query sleep sessions.
+   *
+   * Android: Reads Health Connect `SleepSessionRecord`s. Each session already
+   * carries its own stages (awake / light / deep / rem / ...).
+   *
+   * iOS: HealthKit has no native sleep-session concept, only individual sleep
+   * analysis category samples. Contiguous samples from the same source are
+   * grouped into a session; samples separated by more than `sessionGapMinutes`
+   * (default 60) start a new session. Each underlying sample becomes a stage.
+   *
+   * Requires the `READ_SLEEP` permission.
+   *
+   * @param request
+   */
+  querySleep(request: QuerySleepRequest): Promise<QuerySleepResponse>;
 }
 
 export declare type HealthPermission =
@@ -76,7 +93,8 @@ export declare type HealthPermission =
   | 'READ_DISTANCE'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE'
-  | 'READ_MINDFULNESS';
+  | 'READ_MINDFULNESS'
+  | 'READ_SLEEP';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
@@ -128,7 +146,12 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'active-calories' | 'mindfulness';
+  /**
+   * `sleep` returns the total time asleep per bucket (Health Connect's
+   * `SLEEP_DURATION_TOTAL`, in seconds, excluding awake stages). **Android only** —
+   * iOS rejects it; on iOS use `querySleep` and sum the sessions' `duration`.
+   */
+  dataType: 'steps' | 'active-calories' | 'mindfulness' | 'sleep';
   bucket: string;
   /**
    * Optional list of package names (Android) or bundle identifiers (iOS) to
@@ -167,3 +190,48 @@ export interface HealthRecord {
 export interface QueryRecordsResponse {
   records: HealthRecord[];
 }
+
+export interface QuerySleepRequest {
+  startDate: string;
+  endDate: string;
+  /**
+   * iOS only: maximum gap, in minutes, between two consecutive sleep samples
+   * from the same source for them to be treated as part of the same session.
+   * Defaults to 60. Ignored on Android, where Health Connect already groups
+   * samples into sessions.
+   */
+  sessionGapMinutes?: number;
+}
+
+export interface QuerySleepResponse {
+  sessions: SleepSession[];
+}
+
+export interface SleepSession {
+  /** Start of the session (start of the first stage). ISO 8601 string. */
+  startDate: string;
+  /** End of the session (end of the last stage). ISO 8601 string. */
+  endDate: string;
+  /**
+   * Total time asleep in seconds, i.e. the summed duration of the asleep stages
+   * (`light` + `deep` + `rem` + `asleep`). Excludes `awake`, `inBed` and
+   * `outOfBed` stages, so this is typically less than `endDate - startDate`.
+   */
+  duration: number;
+  /** Identifier of the session. On Android this is the record id. */
+  id?: string;
+  sourceName: string;
+  sourceBundleId: string;
+  /** True if the session was entered manually by the user rather than recorded by a device. */
+  manual: boolean;
+  /** Per-stage breakdown of the session, ordered by start time. */
+  stages: SleepStage[];
+}
+
+export interface SleepStage {
+  startDate: string;
+  endDate: string;
+  stage: SleepStageType;
+}
+
+export declare type SleepStageType = 'awake' | 'asleep' | 'light' | 'deep' | 'rem' | 'inBed' | 'outOfBed' | 'unknown';
