@@ -12,12 +12,17 @@ import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
@@ -40,9 +45,11 @@ import java.time.ZoneId
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.jvm.optionals.getOrDefault
+import kotlin.reflect.KClass
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE,
+    READ_WEIGHT, READ_HEIGHT, READ_BODY_FAT, READ_LEAN_BODY_MASS;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -86,6 +93,22 @@ enum class CapHealthPermission {
         Permission(
             alias = "READ_ROUTE",
             strings = ["android.permission.health.READ_EXERCISE_ROUTE"]
+        ),
+        Permission(
+            alias = "READ_WEIGHT",
+            strings = ["android.permission.health.READ_WEIGHT"]
+        ),
+        Permission(
+            alias = "READ_HEIGHT",
+            strings = ["android.permission.health.READ_HEIGHT"]
+        ),
+        Permission(
+            alias = "READ_BODY_FAT",
+            strings = ["android.permission.health.READ_BODY_FAT"]
+        ),
+        Permission(
+            alias = "READ_LEAN_BODY_MASS",
+            strings = ["android.permission.health.READ_LEAN_BODY_MASS"]
         )
     ]
 )
@@ -142,7 +165,54 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_ACTIVE_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
-        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS")
+        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS"),
+        Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT"),
+        Pair(CapHealthPermission.READ_HEIGHT, "android.permission.health.READ_HEIGHT"),
+        Pair(CapHealthPermission.READ_BODY_FAT, "android.permission.health.READ_BODY_FAT"),
+        Pair(CapHealthPermission.READ_LEAN_BODY_MASS, "android.permission.health.READ_LEAN_BODY_MASS")
+    )
+
+    /**
+     * Describes how one JS `dataType` maps onto a Health Connect record.
+     *
+     * Body composition records are instantaneous (a single `time`), while steps
+     * is an interval record, so start/end are read per type rather than through
+     * the library's `InstantaneousRecord` / `IntervalRecord` interfaces, which
+     * are internal to Health Connect and not visible here.
+     */
+    private data class RecordTypeDescriptor(
+        val recordType: KClass<out Record>,
+        val permission: CapHealthPermission,
+        val startOf: (Record) -> Instant,
+        val endOf: (Record) -> Instant,
+        val valueOf: (Record) -> Double,
+    )
+
+    private val recordTypeDescriptors = mapOf(
+        "steps" to RecordTypeDescriptor(
+            StepsRecord::class, CapHealthPermission.READ_STEPS,
+            { (it as StepsRecord).startTime }, { (it as StepsRecord).endTime },
+        ) { (it as StepsRecord).count.toDouble() },
+        // Health Connect stores mass in kilograms and length in meters, which is
+        // what we expose to JS, so these need no conversion.
+        "weight" to RecordTypeDescriptor(
+            WeightRecord::class, CapHealthPermission.READ_WEIGHT,
+            { (it as WeightRecord).time }, { (it as WeightRecord).time },
+        ) { (it as WeightRecord).weight.inKilograms },
+        "height" to RecordTypeDescriptor(
+            HeightRecord::class, CapHealthPermission.READ_HEIGHT,
+            { (it as HeightRecord).time }, { (it as HeightRecord).time },
+        ) { (it as HeightRecord).height.inMeters },
+        // Percentage.value is already 0 - 100, matching what we expose to JS.
+        // iOS reports 0 - 1 and scales up to match.
+        "body-fat" to RecordTypeDescriptor(
+            BodyFatRecord::class, CapHealthPermission.READ_BODY_FAT,
+            { (it as BodyFatRecord).time }, { (it as BodyFatRecord).time },
+        ) { (it as BodyFatRecord).percentage.value },
+        "lean-body-mass" to RecordTypeDescriptor(
+            LeanBodyMassRecord::class, CapHealthPermission.READ_LEAN_BODY_MASS,
+            { (it as LeanBodyMassRecord).time }, { (it as LeanBodyMassRecord).time },
+        ) { (it as LeanBodyMassRecord).mass.inKilograms },
     )
 
     // Check if a set of permissions are granted
@@ -386,36 +456,54 @@ class HealthPlugin : Plugin() {
                 return
             }
 
-            if (dataType != "steps") {
-                call.reject("queryRecords currently only supports dataType 'steps'")
+            val descriptor = recordTypeDescriptors[dataType]
+            if (descriptor == null) {
+                call.reject("Unsupported dataType: $dataType. Supported: ${recordTypeDescriptors.keys.joinToString(", ")}")
                 return
             }
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    if (!hasPermission(CapHealthPermission.READ_STEPS)) {
-                        call.reject("READ_STEPS permission not granted")
+                    if (!hasPermission(descriptor.permission)) {
+                        call.reject("${descriptor.permission} permission not granted")
                         return@launch
                     }
 
                     val startInstant = Instant.parse(startDate)
                     val endInstant = Instant.parse(endDate)
                     val timeRange = TimeRangeFilter.between(startInstant, endInstant)
-                    val request = ReadRecordsRequest(StepsRecord::class, timeRange)
-
-                    val response = healthConnectClient.readRecords(request)
                     val recordsArray = JSArray()
 
-                    for (record in response.records) {
-                        val obj = JSObject()
-                        obj.put("startDate", record.startTime.toString())
-                        obj.put("endDate", record.endTime.toString())
-                        obj.put("value", record.count)
-                        obj.put("sourceBundleId", record.metadata.dataOrigin.packageName)
-                        obj.put("sourceName", record.metadata.device?.model ?: "")
-                        obj.put("manual", record.metadata.recordingMethod == androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_MANUAL_ENTRY)
-                        recordsArray.put(obj)
-                    }
+                    // readRecords returns at most one page (1000 records by default), so
+                    // follow pageToken until it is exhausted. iOS queries with
+                    // HKObjectQueryNoLimit, and callers should not have to care about the
+                    // difference. Records come back in ascending time order on both platforms.
+                    var pageToken: String? = null
+                    do {
+                        @Suppress("UNCHECKED_CAST")
+                        val request = ReadRecordsRequest(
+                            descriptor.recordType as KClass<Record>,
+                            timeRange,
+                            emptySet(),
+                            true,
+                            1000,
+                            pageToken,
+                        )
+                        val response = healthConnectClient.readRecords(request)
+
+                        for (record in response.records) {
+                            val obj = JSObject()
+                            obj.put("startDate", descriptor.startOf(record).toString())
+                            obj.put("endDate", descriptor.endOf(record).toString())
+                            obj.put("value", descriptor.valueOf(record))
+                            obj.put("sourceBundleId", record.metadata.dataOrigin.packageName)
+                            obj.put("sourceName", record.metadata.device?.model ?: "")
+                            obj.put("manual", record.metadata.recordingMethod == androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_MANUAL_ENTRY)
+                            recordsArray.put(obj)
+                        }
+
+                        pageToken = response.pageToken
+                    } while (pageToken != null)
 
                     val result = JSObject()
                     result.put("records", recordsArray)

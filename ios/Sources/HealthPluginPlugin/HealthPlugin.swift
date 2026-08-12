@@ -100,8 +100,45 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             ].compactMap{$0}
         case "READ_MINDFULNESS":
             return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
+        case "READ_WEIGHT":
+            return [HKObjectType.quantityType(forIdentifier: .bodyMass)].compactMap{$0}
+        case "READ_HEIGHT":
+            return [HKObjectType.quantityType(forIdentifier: .height)].compactMap{$0}
+        case "READ_BODY_FAT":
+            return [HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)].compactMap{$0}
+        case "READ_LEAN_BODY_MASS":
+            return [HKObjectType.quantityType(forIdentifier: .leanBodyMass)].compactMap{$0}
         default:
             return []
+        }
+    }
+
+    /// Describes how one JS `dataType` maps onto a HealthKit quantity type.
+    ///
+    /// `scale` normalises the HealthKit value to the unit the plugin exposes to
+    /// JS, so both platforms return the same number for the same measurement.
+    struct RecordTypeDescriptor {
+        let identifier: HKQuantityTypeIdentifier
+        let unit: HKUnit
+        let scale: Double
+    }
+
+    func recordTypeDescriptor(_ dataType: String) -> RecordTypeDescriptor? {
+        switch dataType {
+        case "steps":
+            return RecordTypeDescriptor(identifier: .stepCount, unit: HKUnit.count(), scale: 1)
+        case "weight":
+            return RecordTypeDescriptor(identifier: .bodyMass, unit: HKUnit.gramUnit(with: .kilo), scale: 1)
+        case "height":
+            return RecordTypeDescriptor(identifier: .height, unit: HKUnit.meter(), scale: 1)
+        case "body-fat":
+            // HealthKit reports a fraction (0 - 1); Health Connect reports 0 - 100.
+            // Scale up so JS always sees 0 - 100.
+            return RecordTypeDescriptor(identifier: .bodyFatPercentage, unit: HKUnit.percent(), scale: 100)
+        case "lean-body-mass":
+            return RecordTypeDescriptor(identifier: .leanBodyMass, unit: HKUnit.gramUnit(with: .kilo), scale: 1)
+        default:
+            return nil
         }
     }
     
@@ -288,20 +325,20 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        guard dataTypeString == "steps" else {
-            call.reject("queryRecords currently only supports dataType 'steps'")
+        guard let descriptor = recordTypeDescriptor(dataTypeString) else {
+            call.reject("Unsupported dataType: \(dataTypeString). Supported: steps, weight, height, body-fat, lean-body-mass")
             return
         }
-        
-        guard let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
-            call.reject("Step count type not available")
+
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: descriptor.identifier) else {
+            call.reject("Data type not available: \(dataTypeString)")
             return
         }
-        
+
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-        
-        let query = HKSampleQuery(sampleType: stepCountType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+
+        let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
             if let error = error {
                 call.reject("Error querying records: \(error.localizedDescription)")
                 return
@@ -316,7 +353,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return [
                     "startDate": self.isoDateFormatter.string(from: sample.startDate),
                     "endDate": self.isoDateFormatter.string(from: sample.endDate),
-                    "value": sample.quantity.doubleValue(for: HKUnit.count()),
+                    "value": sample.quantity.doubleValue(for: descriptor.unit) * descriptor.scale,
                     "sourceBundleId": sample.sourceRevision.source.bundleIdentifier,
                     "sourceName": sample.sourceRevision.source.name,
                     "manual": sample.metadata?[HKMetadataKeyWasUserEntered] as? Bool ?? false

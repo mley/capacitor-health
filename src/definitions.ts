@@ -61,6 +61,13 @@ export interface HealthPlugin {
    * this returns each record separately with its data origin, which is useful
    * for detecting duplicate sources.
    *
+   * Supports `steps` and the body composition types `weight`, `height`,
+   * `body-fat` and `lean-body-mass`. All of them behave identically on Android
+   * and iOS - see {@link RecordDataType} for the units.
+   *
+   * Body composition measurements are taken at a single point in time, so
+   * `startDate` and `endDate` of the returned records are equal.
+   *
    * @param request
    */
   queryRecords(request: QueryRecordsRequest): Promise<QueryRecordsResponse>;
@@ -75,7 +82,11 @@ export declare type HealthPermission =
   | 'READ_DISTANCE'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE'
-  | 'READ_MINDFULNESS';
+  | 'READ_MINDFULNESS'
+  | 'READ_WEIGHT'
+  | 'READ_HEIGHT'
+  | 'READ_BODY_FAT'
+  | 'READ_LEAN_BODY_MASS';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
@@ -150,10 +161,26 @@ export interface AggregatedSample {
   value: number;
 }
 
+/**
+ * Data types that can be read as individual records via `queryRecords`.
+ *
+ * The four body composition types behave identically on Android and iOS: same
+ * units, same value ranges, same result shape.
+ *
+ * | dataType           | Permission             | Unit                |
+ * |--------------------|------------------------|---------------------|
+ * | `steps`            | `READ_STEPS`           | count               |
+ * | `weight`           | `READ_WEIGHT`          | kilograms           |
+ * | `height`           | `READ_HEIGHT`          | meters              |
+ * | `body-fat`         | `READ_BODY_FAT`        | percent (0 - 100)   |
+ * | `lean-body-mass`   | `READ_LEAN_BODY_MASS`  | kilograms           |
+ */
+export declare type RecordDataType = 'steps' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass';
+
 export interface QueryRecordsRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps';
+  dataType: RecordDataType;
 }
 
 export interface HealthRecord {
