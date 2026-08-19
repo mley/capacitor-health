@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Grant write permission to push the tag
+  contents: write   # push the tag and create the release
+  id-token: write   # mint the OIDC token npm trusted publishing needs
 
 jobs:
   build-and-publish:
@@ -12,63 +13,62 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Ensures the entire Git history is available
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
+      # Trusted publishing requires npm >= 11.5.1.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Get package version
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Verify this version is not already released
+        run: |
+          if npm view "capacitor-health@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::capacitor-health@$VERSION is already published to npm. Bump the version in package.json."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists on origin. Delete it or bump the version."
+            exit 1
+          fi
 
       - name: Build the project
         run: npm run build  # adjust the build command if necessary
 
-      - name: Configure npm for authentication
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-
-      - name: Get package version
-        id: get_version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          
       - name: Get the last Git tag
-        id: last_tag
         run: echo "LAST_TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
 
       - name: Get release notes from commits
-        id: release_notes
         run: |
           echo "Release Notes:" > release_notes.txt
-          git log ${{ env.LAST_TAG }}..HEAD --pretty=format:"- %s" >> release_notes.txt
+          git log "$LAST_TAG"..HEAD --pretty=format:"- %s" >> release_notes.txt
+          cat release_notes.txt
         shell: bash
 
-      - name: Show release notes
-        run: cat release_notes.txt
+      # Publish first: npm versions are immutable, git tags are not. If this
+      # fails we have not polluted the repo with a tag pointing at nothing.
+      - name: Publish to npm
+        run: npm publish
 
       - name: Create Git tag
         run: |
-          git tag v${{ env.VERSION }}
-          git push origin v${{ env.VERSION }}
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub release
-        uses: actions/create-release@v1
-        with:
-          tag_name: v${{ env.VERSION }}
-          release_name: Release v${{ env.VERSION }}
-          body_path: ./release_notes.txt
-          draft: false
-          prerelease: false
+        run: gh release create "v$VERSION" --title "Release v$VERSION" --notes-file ./release_notes.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Publish to npm
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
