@@ -46,6 +46,10 @@ export interface HealthPlugin {
 
   /**
    * Query aggregated data
+   *
+   * `flights-climbed` behaves identically on Android and iOS - one flight is
+   * roughly three meters of elevation gain on both platforms.
+   *
    * @param request
    */
   queryAggregated(request: QueryAggregatedRequest): Promise<QueryAggregatedResponse>;
@@ -61,9 +65,9 @@ export interface HealthPlugin {
    * this returns each record separately with its data origin, which is useful
    * for detecting duplicate sources.
    *
-   * Supports `steps` and the body composition types `weight`, `height`,
-   * `body-fat` and `lean-body-mass`. All of them behave identically on Android
-   * and iOS - see {@link RecordDataType} for the units.
+   * Supports `steps`, `flights-climbed` and the body composition types
+   * `weight`, `height`, `body-fat` and `lean-body-mass`. All of them behave
+   * identically on Android and iOS - see {@link RecordDataType} for the units.
    *
    * Body composition measurements are taken at a single point in time, so
    * `startDate` and `endDate` of the returned records are equal.
@@ -80,6 +84,7 @@ export declare type HealthPermission =
   | 'READ_ACTIVE_CALORIES'
   | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
+  | 'READ_FLIGHTS_CLIMBED'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE'
   | 'READ_MINDFULNESS'
@@ -138,7 +143,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'active-calories' | 'mindfulness';
+  dataType: 'steps' | 'active-calories' | 'flights-climbed' | 'mindfulness';
   bucket: string;
   /**
    * Optional list of package names (Android) or bundle identifiers (iOS) to
@@ -164,18 +169,24 @@ export interface AggregatedSample {
 /**
  * Data types that can be read as individual records via `queryRecords`.
  *
- * The four body composition types behave identically on Android and iOS: same
- * units, same value ranges, same result shape.
+ * All of these behave identically on Android and iOS: same units, same value
+ * ranges, same result shape.
  *
- * | dataType           | Permission             | Unit                |
- * |--------------------|------------------------|---------------------|
- * | `steps`            | `READ_STEPS`           | count               |
- * | `weight`           | `READ_WEIGHT`          | kilograms           |
- * | `height`           | `READ_HEIGHT`          | meters              |
- * | `body-fat`         | `READ_BODY_FAT`        | percent (0 - 100)   |
- * | `lean-body-mass`   | `READ_LEAN_BODY_MASS`  | kilograms           |
+ * | dataType           | Permission              | Unit                |
+ * |--------------------|-------------------------|---------------------|
+ * | `steps`            | `READ_STEPS`            | count               |
+ * | `flights-climbed`  | `READ_FLIGHTS_CLIMBED`  | count               |
+ * | `weight`           | `READ_WEIGHT`           | kilograms           |
+ * | `height`           | `READ_HEIGHT`           | meters              |
+ * | `body-fat`         | `READ_BODY_FAT`         | percent (0 - 100)   |
+ * | `lean-body-mass`   | `READ_LEAN_BODY_MASS`   | kilograms           |
+ *
+ * `flights-climbed` counts flights of stairs. Both platforms define one
+ * flight as roughly three meters of elevation gain (Apple `flightsClimbed`,
+ * Health Connect `FloorsClimbedRecord`). Health Connect can report fractional
+ * flights, Apple Health always reports whole ones.
  */
-export declare type RecordDataType = 'steps' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass';
+export declare type RecordDataType = 'steps' | 'flights-climbed' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass';
 
 export interface QueryRecordsRequest {
   startDate: string;

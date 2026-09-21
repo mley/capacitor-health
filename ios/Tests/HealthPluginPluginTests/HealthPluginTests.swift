@@ -26,6 +26,7 @@ final class HealthPluginTests: XCTestCase {
     func testRecordTypeDescriptorMapsEverySupportedDataType() {
         let expected: [String: HKQuantityTypeIdentifier] = [
             "steps": .stepCount,
+            "flights-climbed": .flightsClimbed,
             "weight": .bodyMass,
             "height": .height,
             "body-fat": .bodyFatPercentage,
@@ -110,6 +111,21 @@ final class HealthPluginTests: XCTestCase {
         XCTAssertEqual(value, 1234, accuracy: 0.0001)
     }
 
+    /// Apple counts flights, Health Connect counts floors, and both call one of
+    /// them roughly three meters of climb. They are the same unit, so the plugin
+    /// must pass the count through untouched rather than converting anything.
+    func testFlightsClimbedIsNotRescaled() {
+        let descriptor = plugin.recordTypeDescriptor("flights-climbed")
+        XCTAssertNotNil(descriptor)
+        XCTAssertEqual(descriptor?.scale, 1)
+        XCTAssertEqual(descriptor?.unit, HKUnit.count())
+
+        let stored = HKQuantity(unit: HKUnit.count(), doubleValue: 12)
+        let value = stored.doubleValue(for: descriptor!.unit) * descriptor!.scale
+
+        XCTAssertEqual(value, 12, accuracy: 0.0001)
+    }
+
     // MARK: - Permissions
 
     func testBodyCompositionPermissionsMapToReadTypes() {
@@ -131,13 +147,14 @@ final class HealthPluginTests: XCTestCase {
     /// and an unmapped permission silently reports as granted (the result is
     /// built from the requested names, not the resolved types). This ties the two
     /// tables together so adding a data type without its permission fails here.
-    func testEveryBodyCompositionDataTypeHasAMatchingPermission() {
+    func testEveryRecordDataTypeHasAMatchingPermission() {
         let pairs = [
             ("weight", "READ_WEIGHT"),
             ("height", "READ_HEIGHT"),
             ("body-fat", "READ_BODY_FAT"),
             ("lean-body-mass", "READ_LEAN_BODY_MASS"),
-            ("steps", "READ_STEPS")
+            ("steps", "READ_STEPS"),
+            ("flights-climbed", "READ_FLIGHTS_CLIMBED")
         ]
 
         for (dataType, permission) in pairs {
@@ -174,6 +191,20 @@ final class HealthPluginTests: XCTestCase {
         XCTAssertNil(plugin.aggregateTypeToHKQuantityType("height"))
         XCTAssertNil(plugin.aggregateTypeToHKQuantityType("body-fat"))
         XCTAssertNil(plugin.aggregateTypeToHKQuantityType("lean-body-mass"))
+    }
+
+    /// Flights of stairs are cumulative, so unlike body composition they belong
+    /// in the aggregate table - and must resolve to the same HealthKit type that
+    /// queryRecords reads, or aggregated and raw results would disagree.
+    func testFlightsClimbedIsAggregatable() {
+        XCTAssertEqual(
+            plugin.aggregateTypeToHKQuantityType("flights-climbed"),
+            HKObjectType.quantityType(forIdentifier: .flightsClimbed)
+        )
+        XCTAssertEqual(
+            plugin.aggregateTypeToHKQuantityType("flights-climbed"),
+            HKObjectType.quantityType(forIdentifier: plugin.recordTypeDescriptor("flights-climbed")!.identifier)
+        )
     }
 
     func testCalculateIntervalSupportsDocumentedBuckets() {

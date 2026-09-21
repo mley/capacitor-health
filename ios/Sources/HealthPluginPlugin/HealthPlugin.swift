@@ -87,6 +87,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
         case "READ_WORKOUTS":
             return [HKObjectType.workoutType()].compactMap{$0}
+        case "READ_FLIGHTS_CLIMBED":
+            return [HKObjectType.quantityType(forIdentifier: .flightsClimbed)].compactMap{$0}
         case "READ_HEART_RATE":
             return  [HKObjectType.quantityType(forIdentifier: .heartRate)].compactMap{$0}
         case "READ_ROUTE":
@@ -127,6 +129,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         switch dataType {
         case "steps":
             return RecordTypeDescriptor(identifier: .stepCount, unit: HKUnit.count(), scale: 1)
+        case "flights-climbed":
+            // Apple Health counts flights, Health Connect counts floors. Both define
+            // one as roughly three meters of elevation gain, so no conversion is needed.
+            return RecordTypeDescriptor(identifier: .flightsClimbed, unit: HKUnit.count(), scale: 1)
         case "weight":
             return RecordTypeDescriptor(identifier: .bodyMass, unit: HKUnit.gramUnit(with: .kilo), scale: 1)
         case "height":
@@ -148,6 +154,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .stepCount)
         case "active-calories":
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+        case "flights-climbed":
+            return HKObjectType.quantityType(forIdentifier: .flightsClimbed)
         default:
             return nil
         }
@@ -214,6 +222,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         
                         var value: Double = -1.0
                         if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
+                            value = sum.doubleValue(for: HKUnit.count())
+                        } else if(dataTypeString == "flights-climbed" && dataType.is(compatibleWith: HKUnit.count())) {
                             value = sum.doubleValue(for: HKUnit.count())
                         } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
                             value = sum.doubleValue(for: HKUnit.kilocalorie())
@@ -326,7 +336,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         guard let descriptor = recordTypeDescriptor(dataTypeString) else {
-            call.reject("Unsupported dataType: \(dataTypeString). Supported: steps, weight, height, body-fat, lean-body-mass")
+            call.reject("Unsupported dataType: \(dataTypeString). Supported: steps, flights-climbed, weight, height, body-fat, lean-body-mass")
             return
         }
 

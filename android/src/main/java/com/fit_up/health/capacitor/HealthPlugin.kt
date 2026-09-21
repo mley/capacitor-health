@@ -16,6 +16,7 @@ import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
@@ -49,7 +50,7 @@ import kotlin.reflect.KClass
 
 enum class CapHealthPermission {
     READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE,
-    READ_WEIGHT, READ_HEIGHT, READ_BODY_FAT, READ_LEAN_BODY_MASS;
+    READ_FLIGHTS_CLIMBED, READ_WEIGHT, READ_HEIGHT, READ_BODY_FAT, READ_LEAN_BODY_MASS;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -85,6 +86,10 @@ enum class CapHealthPermission {
         Permission(
             alias = "READ_TOTAL_CALORIES",
             strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]
+        ),
+        Permission(
+            alias = "READ_FLIGHTS_CLIMBED",
+            strings = ["android.permission.health.READ_FLOORS_CLIMBED"]
         ),
         Permission(
             alias = "READ_HEART_RATE",
@@ -166,6 +171,7 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
         Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS"),
+        Pair(CapHealthPermission.READ_FLIGHTS_CLIMBED, "android.permission.health.READ_FLOORS_CLIMBED"),
         Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT"),
         Pair(CapHealthPermission.READ_HEIGHT, "android.permission.health.READ_HEIGHT"),
         Pair(CapHealthPermission.READ_BODY_FAT, "android.permission.health.READ_BODY_FAT"),
@@ -176,7 +182,7 @@ class HealthPlugin : Plugin() {
      * Describes how one JS `dataType` maps onto a Health Connect record.
      *
      * Body composition records are instantaneous (a single `time`), while steps
-     * is an interval record, so start/end are read per type rather than through
+     * and floors climbed are interval records, so start/end are read per type rather than through
      * the library's `InstantaneousRecord` / `IntervalRecord` interfaces, which
      * are internal to Health Connect and not visible here.
      */
@@ -193,6 +199,13 @@ class HealthPlugin : Plugin() {
             StepsRecord::class, CapHealthPermission.READ_STEPS,
             { (it as StepsRecord).startTime }, { (it as StepsRecord).endTime },
         ) { (it as StepsRecord).count.toDouble() },
+        // Health Connect counts floors, Apple Health counts flights. Both define one
+        // as roughly three meters of elevation gain, so the value needs no conversion.
+        // Health Connect allows fractional floors, Apple Health does not.
+        "flights-climbed" to RecordTypeDescriptor(
+            FloorsClimbedRecord::class, CapHealthPermission.READ_FLIGHTS_CLIMBED,
+            { (it as FloorsClimbedRecord).startTime }, { (it as FloorsClimbedRecord).endTime },
+        ) { (it as FloorsClimbedRecord).floors },
         // Health Connect stores mass in kilograms and length in meters, which is
         // what we expose to JS, so these need no conversion.
         "weight" to RecordTypeDescriptor(
@@ -326,6 +339,11 @@ class HealthPlugin : Plugin() {
                 TotalCaloriesBurnedRecord.ENERGY_TOTAL
             ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
+            "flights-climbed" -> metricAndMapper(
+                "flights",
+                CapHealthPermission.READ_FLIGHTS_CLIMBED,
+                FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL
+            ) { it }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
     }

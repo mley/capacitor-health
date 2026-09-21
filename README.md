@@ -59,6 +59,7 @@ npx cap sync
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
@@ -70,6 +71,47 @@ npx cap sync
 
 Only declare the permissions your app actually requests - Health Connect shows every declared
 permission on the consent screen.
+
+## Flights of stairs
+
+`flights-climbed` is available through both `queryAggregated` and `queryRecords`. Apple Health
+calls these *flights climbed* and Health Connect calls them *floors climbed*, but both define one
+as roughly three meters of elevation gain, so the plugin exposes a single type with one
+permission and one unit.
+
+| `dataType` | Permission | Unit | Apple Health | Health Connect |
+|---|---|---|---|---|
+| `flights-climbed` | `READ_FLIGHTS_CLIMBED` | count | `flightsClimbed` | `FloorsClimbedRecord` |
+
+```typescript
+await Health.requestHealthPermissions({ permissions: ['READ_FLIGHTS_CLIMBED'] });
+
+// Aggregated - one total per bucket
+const { aggregatedData } = await Health.queryAggregated({
+  startDate: '2026-01-01T00:00:00.000Z',
+  endDate: '2026-01-08T00:00:00.000Z',
+  dataType: 'flights-climbed',
+  bucket: 'day',
+});
+// [{ startDate: '...', endDate: '...', value: 14 }]
+
+// Raw - every record, with the app that wrote it
+const { records } = await Health.queryRecords({
+  startDate: '2026-01-01T00:00:00.000Z',
+  endDate: '2026-01-08T00:00:00.000Z',
+  dataType: 'flights-climbed',
+});
+// [{ startDate: '...', endDate: '...', value: 3, sourceBundleId: '...', sourceName: '...', manual: false }]
+```
+
+Notes:
+
+* Health Connect can report fractional flights, Apple Health always reports whole ones.
+* Unlike body composition, these records cover a time span, so `startDate` and `endDate` differ.
+* The Android permission is `android.permission.health.READ_FLOORS_CLIMBED` - Health Connect names
+  it after floors, while the plugin's cross-platform permission is `READ_FLIGHTS_CLIMBED`.
+* `queryAggregated` only supports `bucket: 'day'` on Android; `'hour'` and `'week'` work on iOS
+  only. That limit applies to every aggregated data type, not just this one.
 
 ## Body composition
 
@@ -227,6 +269,9 @@ queryAggregated(request: QueryAggregatedRequest) => Promise<QueryAggregatedRespo
 
 Query aggregated data
 
+`flights-climbed` behaves identically on Android and iOS - one flight is
+roughly three meters of elevation gain on both platforms.
+
 | Param         | Type                                                                      |
 | ------------- | ------------------------------------------------------------------------- |
 | **`request`** | <code><a href="#queryaggregatedrequest">QueryAggregatedRequest</a></code> |
@@ -263,9 +308,9 @@ Query individual records for a given data type. Unlike queryAggregated,
 this returns each record separately with its data origin, which is useful
 for detecting duplicate sources.
 
-Supports `steps` and the body composition types `weight`, `height`,
-`body-fat` and `lean-body-mass`. All of them behave identically on Android
-and iOS - see {@link <a href="#recorddatatype">RecordDataType</a>} for the units.
+Supports `steps`, `flights-climbed` and the body composition types
+`weight`, `height`, `body-fat` and `lean-body-mass`. All of them behave
+identically on Android and iOS - see {@link <a href="#recorddatatype">RecordDataType</a>} for the units.
 
 Body composition measurements are taken at a single point in time, so
 `startDate` and `endDate` of the returned records are equal.
@@ -314,13 +359,13 @@ Body composition measurements are taken at a single point in time, so
 
 #### QueryAggregatedRequest
 
-| Prop              | Type                                                       | Description                                                                                                                                                                                                                                      |
-| ----------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`startDate`**   | <code>string</code>                                        |                                                                                                                                                                                                                                                  |
-| **`endDate`**     | <code>string</code>                                        |                                                                                                                                                                                                                                                  |
-| **`dataType`**    | <code>'steps' \| 'active-calories' \| 'mindfulness'</code> |                                                                                                                                                                                                                                                  |
-| **`bucket`**      | <code>string</code>                                        |                                                                                                                                                                                                                                                  |
-| **`dataOrigins`** | <code>string[]</code>                                      | Optional list of package names (Android) or bundle identifiers (iOS) to restrict the aggregation to. When omitted or empty, data from all sources is included. Example: `['com.sec.android.app.shealth']` to only aggregate Samsung Health data. |
+| Prop              | Type                                                                            | Description                                                                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`startDate`**   | <code>string</code>                                                             |                                                                                                                                                                                                                                                  |
+| **`endDate`**     | <code>string</code>                                                             |                                                                                                                                                                                                                                                  |
+| **`dataType`**    | <code>'steps' \| 'active-calories' \| 'flights-climbed' \| 'mindfulness'</code> |                                                                                                                                                                                                                                                  |
+| **`bucket`**      | <code>string</code>                                                             |                                                                                                                                                                                                                                                  |
+| **`dataOrigins`** | <code>string[]</code>                                                           | Optional list of package names (Android) or bundle identifiers (iOS) to restrict the aggregation to. When omitted or empty, data from all sources is included. Example: `['com.sec.android.app.shealth']` to only aggregate Samsung Health data. |
 
 
 #### QueryWorkoutResponse
@@ -410,24 +455,30 @@ Body composition measurements are taken at a single point in time, so
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'WRITE_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_WEIGHT' | 'READ_HEIGHT' | 'READ_BODY_FAT' | 'READ_LEAN_BODY_MASS'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'WRITE_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_FLIGHTS_CLIMBED' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_WEIGHT' | 'READ_HEIGHT' | 'READ_BODY_FAT' | 'READ_LEAN_BODY_MASS'</code>
 
 
 #### RecordDataType
 
 Data types that can be read as individual records via `queryRecords`.
 
-The four body composition types behave identically on Android and iOS: same
-units, same value ranges, same result shape.
+All of these behave identically on Android and iOS: same units, same value
+ranges, same result shape.
 
-| dataType           | Permission             | Unit                |
-|--------------------|------------------------|---------------------|
-| `steps`            | `READ_STEPS`           | count               |
-| `weight`           | `READ_WEIGHT`          | kilograms           |
-| `height`           | `READ_HEIGHT`          | meters              |
-| `body-fat`         | `READ_BODY_FAT`        | percent (0 - 100)   |
-| `lean-body-mass`   | `READ_LEAN_BODY_MASS`  | kilograms           |
+| dataType           | Permission              | Unit                |
+|--------------------|-------------------------|---------------------|
+| `steps`            | `READ_STEPS`            | count               |
+| `flights-climbed`  | `READ_FLIGHTS_CLIMBED`  | count               |
+| `weight`           | `READ_WEIGHT`           | kilograms           |
+| `height`           | `READ_HEIGHT`           | meters              |
+| `body-fat`         | `READ_BODY_FAT`         | percent (0 - 100)   |
+| `lean-body-mass`   | `READ_LEAN_BODY_MASS`   | kilograms           |
 
-<code>'steps' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass'</code>
+`flights-climbed` counts flights of stairs. Both platforms define one
+flight as roughly three meters of elevation gain (Apple `flightsClimbed`,
+Health Connect `FloorsClimbedRecord`). Health Connect can report fractional
+flights, Apple Health always reports whole ones.
+
+<code>'steps' | 'flights-climbed' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass'</code>
 
 </docgen-api>
