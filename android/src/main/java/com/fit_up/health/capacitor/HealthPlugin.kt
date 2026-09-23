@@ -20,6 +20,7 @@ import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
@@ -50,7 +51,7 @@ import kotlin.reflect.KClass
 
 enum class CapHealthPermission {
     READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE,
-    READ_FLIGHTS_CLIMBED, READ_WEIGHT, READ_HEIGHT, READ_BODY_FAT, READ_LEAN_BODY_MASS;
+    READ_FLIGHTS_CLIMBED, READ_WEIGHT, READ_HEIGHT, READ_BODY_FAT, READ_LEAN_BODY_MASS, READ_NUTRITION;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -114,6 +115,10 @@ enum class CapHealthPermission {
         Permission(
             alias = "READ_LEAN_BODY_MASS",
             strings = ["android.permission.health.READ_LEAN_BODY_MASS"]
+        ),
+        Permission(
+            alias = "READ_NUTRITION",
+            strings = ["android.permission.health.READ_NUTRITION"]
         )
     ]
 )
@@ -175,7 +180,8 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT"),
         Pair(CapHealthPermission.READ_HEIGHT, "android.permission.health.READ_HEIGHT"),
         Pair(CapHealthPermission.READ_BODY_FAT, "android.permission.health.READ_BODY_FAT"),
-        Pair(CapHealthPermission.READ_LEAN_BODY_MASS, "android.permission.health.READ_LEAN_BODY_MASS")
+        Pair(CapHealthPermission.READ_LEAN_BODY_MASS, "android.permission.health.READ_LEAN_BODY_MASS"),
+        Pair(CapHealthPermission.READ_NUTRITION, "android.permission.health.READ_NUTRITION")
     )
 
     /**
@@ -533,6 +539,89 @@ class HealthPlugin : Plugin() {
         } catch (e: Exception) {
             call.reject(e.message)
         }
+    }
+
+    @PluginMethod
+    fun queryNutrition(call: PluginCall) {
+        try {
+            val startDate = call.getString("startDate")
+            val endDate = call.getString("endDate")
+            val limit = call.getInt("limit")
+
+            if (startDate == null || endDate == null) {
+                call.reject("Missing required parameters: startDate or endDate")
+                return
+            }
+            if (limit != null && limit < 1) {
+                call.reject("limit must be a positive integer")
+                return
+            }
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    if (!hasPermission(CapHealthPermission.READ_NUTRITION)) {
+                        call.reject("${CapHealthPermission.READ_NUTRITION} permission not granted")
+                        return@launch
+                    }
+
+                    val timeRange = TimeRangeFilter.between(Instant.parse(startDate), Instant.parse(endDate))
+                    val entries = mutableListOf<NutritionEntry>()
+
+                    // Same paging as queryRecords, but stop early once `limit` is reached.
+                    // Records come back in ascending start time order, so the first
+                    // `limit` records read are the ones to return.
+                    var pageToken: String? = null
+                    do {
+                        val pageSize = if (limit == null) 1000 else minOf(1000, limit - entries.size)
+                        val request = ReadRecordsRequest(
+                            NutritionRecord::class,
+                            timeRange,
+                            emptySet(),
+                            true,
+                            pageSize,
+                            pageToken,
+                        )
+                        val response = healthConnectClient.readRecords(request)
+                        response.records.mapTo(entries) { NutritionMapper.fromRecord(it) }
+                        pageToken = response.pageToken
+                    } while (pageToken != null && (limit == null || entries.size < limit))
+
+                    val entriesArray = JSArray()
+                    NutritionMapper.sortAndLimit(entries, limit).forEach { entriesArray.put(it.toJs()) }
+
+                    val result = JSObject()
+                    result.put("entries", entriesArray)
+                    call.resolve(result)
+                } catch (e: Exception) {
+                    call.reject("Error querying nutrition: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            call.reject(e.message)
+        }
+    }
+
+    private fun NutritionEntry.toJs(): JSObject {
+        val obj = JSObject()
+        obj.put("id", id)
+        obj.put("startDate", startDate.toString())
+        obj.put("endDate", endDate.toString())
+        name?.let { obj.put("name", it) }
+        obj.put("mealType", mealType)
+        energyKcal?.let { obj.put("energyKcal", it) }
+
+        val macros = JSObject()
+        proteinG?.let { macros.put("proteinG", it) }
+        carbohydratesG?.let { macros.put("carbohydratesG", it) }
+        fatG?.let { macros.put("fatG", it) }
+        saturatedFatG?.let { macros.put("saturatedFatG", it) }
+        sugarG?.let { macros.put("sugarG", it) }
+        fiberG?.let { macros.put("fiberG", it) }
+        obj.put("macros", macros)
+
+        obj.put("sourceBundleId", sourceBundleId)
+        obj.put("grouping", grouping)
+        return obj
     }
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {

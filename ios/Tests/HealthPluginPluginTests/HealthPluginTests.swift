@@ -223,4 +223,165 @@ final class HealthPluginTests: XCTestCase {
         XCTAssertNotNil(plugin.isoDateFormatter.date(from: "2026-01-01T00:00:00.000Z"))
         XCTAssertNil(plugin.isoDateFormatter.date(from: "2026-01-01T00:00:00Z"))
     }
+
+    // MARK: - Nutrition
+
+    private let mealStart = Date(timeIntervalSince1970: 1_767_268_800) // 2026-01-01T12:00:00Z
+    private let mealEnd = Date(timeIntervalSince1970: 1_767_270_600) // 2026-01-01T12:30:00Z
+    private let testSource = NutritionSource(name: "Food App", bundleId: "com.example.food")
+
+    private func nutrientSample(_ identifier: HKQuantityTypeIdentifier, _ unit: HKUnit, _ value: Double,
+                                start: Date? = nil, metadata: [String: Any]? = nil) -> HKQuantitySample {
+        let date = start ?? mealStart
+        return HKQuantitySample(
+            type: HKObjectType.quantityType(forIdentifier: identifier)!,
+            quantity: HKQuantity(unit: unit, doubleValue: value),
+            start: date,
+            end: date,
+            metadata: metadata
+        )
+    }
+
+    private func food(_ samples: [HKSample], start: Date? = nil, metadata: [String: Any]? = nil) -> HKCorrelation {
+        return HKCorrelation(
+            type: HKCorrelationType.correlationType(forIdentifier: .food)!,
+            start: start ?? mealStart,
+            end: start ?? mealEnd,
+            objects: Set(samples),
+            metadata: metadata
+        )
+    }
+
+    func testReadNutritionRequestsEveryNutrientType() {
+        let expected: [HKQuantityTypeIdentifier] = [
+            .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
+            .dietaryFatSaturated, .dietarySugar, .dietaryFiber
+        ]
+        let readTypes = Set(plugin.permissionToHKObjectReadType("READ_NUTRITION"))
+
+        XCTAssertEqual(readTypes, Set(expected.map { HKObjectType.quantityType(forIdentifier: $0)! as HKObjectType }))
+    }
+
+    /// Each nutrient is summed across the correlation's members of that type and
+    /// converted from whatever unit the writing app used.
+    func testCorrelationSumsAndConvertsMembers() {
+        let correlation = food([
+            nutrientSample(.dietaryEnergyConsumed, .kilocalorie(), 150),
+            nutrientSample(.dietaryEnergyConsumed, .jouleUnit(with: .kilo), 418.4),
+            nutrientSample(.dietaryProtein, .gram(), 10),
+            nutrientSample(.dietaryProtein, .gramUnit(with: .milli), 2500),
+            nutrientSample(.dietaryCarbohydrates, .ounce(), 1),
+            nutrientSample(.dietaryFatTotal, .gram(), 8),
+            nutrientSample(.dietaryFatSaturated, .gram(), 3),
+            nutrientSample(.dietarySugar, .gram(), 12),
+            nutrientSample(.dietaryFiber, .gram(), 4)
+        ], metadata: [HKMetadataKeyFoodType: "Porridge"])
+
+        let entry = NutritionMapper.entry(from: correlation, source: testSource)
+
+        XCTAssertEqual(entry.id, correlation.uuid.uuidString)
+        XCTAssertEqual(entry.startDate, mealStart)
+        XCTAssertEqual(entry.endDate, mealEnd)
+        XCTAssertEqual(entry.name, "Porridge")
+        XCTAssertEqual(entry.grouping, "correlation")
+        XCTAssertEqual(entry.source, testSource)
+        XCTAssertEqual(entry.values[.energyKcal]!, 250, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.proteinG]!, 12.5, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.carbohydratesG]!, 28.3495, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.fatG]!, 8, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.saturatedFatG]!, 3, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.sugarG]!, 12, accuracy: 0.001)
+        XCTAssertEqual(entry.values[.fiberG]!, 4, accuracy: 0.001)
+    }
+
+    /// A nutrient with no member sample must be absent, not 0 - while a
+    /// recorded 0 is real data and must be kept.
+    func testCorrelationDistinguishesMissingFromZero() {
+        let correlation = food([
+            nutrientSample(.dietaryEnergyConsumed, .kilocalorie(), 0),
+            nutrientSample(.dietaryProtein, .gram(), 5)
+        ])
+
+        let entry = NutritionMapper.entry(from: correlation, source: testSource)
+        let js = entry.toJS(plugin.isoDateFormatter)
+        let macros = js["macros"] as? [String: Any]
+
+        XCTAssertEqual(js["energyKcal"] as? Double, 0)
+        XCTAssertEqual(macros?["proteinG"] as? Double, 5)
+        XCTAssertEqual(macros?.count, 1)
+        XCTAssertNil(js["name"])
+        XCTAssertNil(js["mealType"])
+    }
+
+    func testCorrelationIgnoresMembersThatAreNotReadNutrients() {
+        let correlation = food([
+            nutrientSample(.dietaryCaffeine, .gram(), 0.1),
+            nutrientSample(.dietarySugar, .gram(), 20)
+        ])
+
+        let entry = NutritionMapper.entry(from: correlation, source: testSource)
+
+        XCTAssertEqual(entry.values.count, 1)
+        XCTAssertEqual(entry.values[.sugarG]!, 20, accuracy: 0.001)
+    }
+
+    func testSampleEntryHasOnlyItsOwnNutrient() {
+        let sample = nutrientSample(.dietaryFiber, .gram(), 6, metadata: [HKMetadataKeyFoodType: "Apple"])
+
+        let entry = NutritionMapper.entry(from: sample, source: testSource)
+
+        XCTAssertEqual(entry?.id, sample.uuid.uuidString)
+        XCTAssertEqual(entry?.grouping, "sample")
+        XCTAssertEqual(entry?.name, "Apple")
+        XCTAssertEqual(entry?.values.count, 1)
+        XCTAssertEqual(entry!.values[.fiberG]!, 6, accuracy: 0.001)
+    }
+
+    func testSampleEntryRejectsUnsupportedNutrient() {
+        XCTAssertNil(NutritionMapper.entry(from: nutrientSample(.dietaryCaffeine, .gram(), 0.1), source: testSource))
+    }
+
+    /// Samples inside a returned correlation must not show up again on their
+    /// own, or their nutrients would be counted twice.
+    func testUngroupedSamplesDropCorrelationMembers() {
+        let member = nutrientSample(.dietaryProtein, .gram(), 10)
+        let otherMember = nutrientSample(.dietaryEnergyConsumed, .kilocalorie(), 200)
+        let loose = nutrientSample(.dietaryProtein, .gram(), 7)
+        let correlation = food([member, otherMember])
+
+        let ungrouped = NutritionMapper.ungroupedSamples([member, loose, otherMember], excluding: [correlation])
+
+        XCTAssertEqual(ungrouped.map { $0.uuid }, [loose.uuid])
+    }
+
+    func testMealTypeReadsRecognisedHints() {
+        XCTAssertEqual(NutritionMapper.mealType(from: ["Meal": "Breakfast"]), "breakfast")
+        XCTAssertEqual(NutritionMapper.mealType(from: ["meal_type": " lunch "]), "lunch")
+        XCTAssertEqual(NutritionMapper.mealType(from: ["MealType": "DINNER"]), "dinner")
+        XCTAssertEqual(NutritionMapper.mealType(from: ["HKFoodMeal": "Snacks"]), "snack")
+    }
+
+    /// Without a recognisable hint the meal type stays undefined - no guessing,
+    /// and in particular no guessing from the time of day.
+    func testMealTypeIsNilWithoutRecognisedHint() {
+        XCTAssertNil(NutritionMapper.mealType(from: nil))
+        XCTAssertNil(NutritionMapper.mealType(from: [:]))
+        XCTAssertNil(NutritionMapper.mealType(from: [HKMetadataKeyFoodType: "Breakfast burrito"]))
+        XCTAssertNil(NutritionMapper.mealType(from: ["Meal": "brunch"]))
+        XCTAssertNil(NutritionMapper.mealType(from: ["Meal": 1]))
+
+        let correlation = food([nutrientSample(.dietaryProtein, .gram(), 1)])
+        XCTAssertNil(NutritionMapper.entry(from: correlation, source: testSource).mealType)
+    }
+
+    func testSortAndLimit() {
+        let late = NutritionMapper.entry(from: food([nutrientSample(.dietarySugar, .gram(), 1)], start: mealEnd), source: testSource)
+        let early = NutritionMapper.entry(from: nutrientSample(.dietarySugar, .gram(), 2), source: testSource)!
+
+        let sorted = NutritionMapper.sortAndLimit([late, early], limit: nil)
+        XCTAssertEqual(sorted.map { $0.id }, [early.id, late.id])
+
+        let limited = NutritionMapper.sortAndLimit([late, early], limit: 1)
+        XCTAssertEqual(limited.map { $0.id }, [early.id])
+    }
 }

@@ -17,7 +17,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryRecords", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryRecords", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryNutrition", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -110,6 +111,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return [HKObjectType.quantityType(forIdentifier: .bodyFatPercentage)].compactMap{$0}
         case "READ_LEAN_BODY_MASS":
             return [HKObjectType.quantityType(forIdentifier: .leanBodyMass)].compactMap{$0}
+        case "READ_NUTRITION":
+            // The food correlation type itself cannot be requested. Correlation
+            // queries return members of the authorized quantity types.
+            return NutritionMapper.quantityTypes
         default:
             return []
         }
@@ -374,6 +379,88 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         healthStore.execute(query)
+    }
+
+    @objc func queryNutrition(_ call: CAPPluginCall) {
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
+              let startDate = self.isoDateFormatter.date(from: startDateString),
+              let endDate = self.isoDateFormatter.date(from: endDateString) else {
+            call.reject("Invalid parameters")
+            return
+        }
+
+        let limit = call.getInt("limit")
+        if let limit = limit, limit < 1 {
+            call.reject("limit must be a positive integer")
+            return
+        }
+        let includeUngroupedSamples = call.getBool("includeUngroupedSamples") ?? false
+
+        guard let foodType = HKCorrelationType.correlationType(forIdentifier: .food) else {
+            call.reject("Data type not available: food")
+            return
+        }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        let correlationQuery = HKSampleQuery(sampleType: foodType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+            if let error = error {
+                call.reject("Error querying nutrition: \(error.localizedDescription)")
+                return
+            }
+
+            let correlations = samples as? [HKCorrelation] ?? []
+            let correlationEntries = correlations.map { NutritionMapper.entry(from: $0, source: NutritionSource($0)) }
+
+            guard includeUngroupedSamples else {
+                let entries = NutritionMapper.sortAndLimit(correlationEntries, limit: limit)
+                call.resolve(["entries": entries.map { $0.toJS(self.isoDateFormatter) }])
+                return
+            }
+
+            self.queryNutrientSamples(predicate: predicate) { nutrientSamples, sampleError in
+                if let sampleError = sampleError {
+                    call.reject("Error querying nutrition: \(sampleError.localizedDescription)")
+                    return
+                }
+
+                let sampleEntries = NutritionMapper.ungroupedSamples(nutrientSamples, excluding: correlations)
+                    .compactMap { NutritionMapper.entry(from: $0, source: NutritionSource($0)) }
+                let entries = NutritionMapper.sortAndLimit(correlationEntries + sampleEntries, limit: limit)
+                call.resolve(["entries": entries.map { $0.toJS(self.isoDateFormatter) }])
+            }
+        }
+
+        healthStore.execute(correlationQuery)
+    }
+
+    /// Reads every sample of every nutrient type `queryNutrition` supports.
+    /// Completes with the first error if any of the queries fails.
+    private func queryNutrientSamples(predicate: NSPredicate, completion: @escaping ([HKQuantitySample], Error?) -> Void) {
+        let lock = NSLock()
+        var collected: [HKQuantitySample] = []
+        var firstError: Error?
+        let dispatchGroup = DispatchGroup()
+
+        for quantityType in NutritionMapper.quantityTypes {
+            dispatchGroup.enter()
+            let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                lock.lock()
+                if let error = error {
+                    firstError = firstError ?? error
+                } else {
+                    collected.append(contentsOf: samples as? [HKQuantitySample] ?? [])
+                }
+                lock.unlock()
+                dispatchGroup.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        dispatchGroup.notify(queue: .global()) {
+            completion(collected, firstError)
+        }
     }
 
     func calculateInterval(bucket: String) -> DateComponents? {

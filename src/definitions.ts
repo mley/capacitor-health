@@ -75,6 +75,33 @@ export interface HealthPlugin {
    * @param request
    */
   queryRecords(request: QueryRecordsRequest): Promise<QueryRecordsResponse>;
+
+  /**
+   * Query logged food and meals, with energy and macronutrients.
+   *
+   * Requires the `READ_NUTRITION` permission. Entries are sorted by
+   * `startDate` ascending. Energy is always in kilocalories and macros in
+   * grams. A nutrient the source did not record is omitted, never reported
+   * as `0`.
+   *
+   * The platforms store food differently, which shows up in the entry's
+   * `grouping`:
+   *
+   * - Android (Health Connect): every `NutritionRecord` is one entry with
+   *   `grouping: 'record'`. Health Connect stores the meal type natively.
+   * - iOS (HealthKit): every food correlation (`HKCorrelationType(.food)`) is
+   *   one entry with `grouping: 'correlation'`; its nutrients are summed from
+   *   the correlation's member samples. HealthKit has no standard meal type,
+   *   so `mealType` is usually undefined on iOS.
+   * - iOS with `includeUngroupedSamples: true`: nutrient samples that are not
+   *   part of any returned food correlation are added as one entry each with
+   *   `grouping: 'sample'` and only that one nutrient set. Many apps write
+   *   loose samples instead of correlations, so without this option their
+   *   data is not returned on iOS.
+   *
+   * @param request
+   */
+  queryNutrition(request: QueryNutritionRequest): Promise<QueryNutritionResponse>;
 }
 
 export declare type HealthPermission =
@@ -91,7 +118,8 @@ export declare type HealthPermission =
   | 'READ_WEIGHT'
   | 'READ_HEIGHT'
   | 'READ_BODY_FAT'
-  | 'READ_LEAN_BODY_MASS';
+  | 'READ_LEAN_BODY_MASS'
+  | 'READ_NUTRITION';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
@@ -205,4 +233,79 @@ export interface HealthRecord {
 
 export interface QueryRecordsResponse {
   records: HealthRecord[];
+}
+
+/**
+ * Meal a nutrition entry belongs to.
+ *
+ * Android maps Health Connect's `MealType` constants; `MEAL_TYPE_UNKNOWN` and
+ * unrecognised values become `'unknown'`. iOS has no standard meal type
+ * metadata, so it only sets this when the writing app stored a recognisable
+ * meal hint (see README).
+ */
+export declare type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'unknown';
+
+/**
+ * How a nutrition entry was assembled from the platform's data.
+ *
+ * - `record`: one Health Connect `NutritionRecord` (Android).
+ * - `correlation`: one HealthKit food correlation, nutrients summed over its
+ *   member samples (iOS).
+ * - `sample`: one loose HealthKit nutrient sample that belongs to no returned
+ *   correlation (iOS, only with `includeUngroupedSamples`).
+ */
+export declare type NutritionGrouping = 'record' | 'correlation' | 'sample';
+
+/**
+ * Macronutrients of a nutrition entry, in grams. A nutrient the source did
+ * not record is omitted, never `0`.
+ */
+export interface NutritionMacros {
+  proteinG?: number;
+  carbohydratesG?: number;
+  fatG?: number;
+  saturatedFatG?: number;
+  sugarG?: number;
+  fiberG?: number;
+}
+
+export interface NutritionEntry {
+  /** Health Connect record id (Android) or HealthKit object UUID (iOS). */
+  id: string;
+  startDate: string;
+  endDate: string;
+  /** Food or meal name, if the source stored one. */
+  name?: string;
+  mealType?: MealType;
+  /** Energy in kilocalories. Omitted if the source did not record it. */
+  energyKcal?: number;
+  macros: NutritionMacros;
+  /** Package name (Android) or bundle identifier (iOS) of the writing app. */
+  sourceBundleId: string;
+  /**
+   * Name of the writing app. iOS only - Health Connect records carry no app
+   * name, so this is omitted on Android.
+   */
+  sourceName?: string;
+  grouping: NutritionGrouping;
+}
+
+export interface QueryNutritionRequest {
+  startDate: string;
+  endDate: string;
+  /**
+   * Maximum number of entries to return: the earliest `limit` entries after
+   * sorting. When omitted, all entries in the range are returned.
+   */
+  limit?: number;
+  /**
+   * iOS only; ignored on Android, where every entry is a record. When `true`,
+   * nutrient samples that belong to no returned food correlation are returned
+   * as individual entries with `grouping: 'sample'`. Defaults to `false`.
+   */
+  includeUngroupedSamples?: boolean;
+}
+
+export interface QueryNutritionResponse {
+  entries: NutritionEntry[];
 }

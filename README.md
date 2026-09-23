@@ -67,6 +67,7 @@ npx cap sync
     <uses-permission android:name="android.permission.health.READ_HEIGHT" />
     <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
     <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" />
 ```
 
 Only declare the permissions your app actually requests - Health Connect shows every declared
@@ -149,6 +150,67 @@ Notes:
   in Apple Health. None of them are exposed, to keep the API platform-independent.
 * iOS dates must include fractional seconds (`2026-01-01T00:00:00.000Z`).
 
+## Nutrition
+
+`queryNutrition` reads logged food and meals, with energy and macronutrients. It needs the
+`READ_NUTRITION` permission.
+
+```typescript
+await Health.requestHealthPermissions({ permissions: ['READ_NUTRITION'] });
+
+const { entries } = await Health.queryNutrition({
+  startDate: '2026-01-01T00:00:00.000Z',
+  endDate: '2026-01-02T00:00:00.000Z',
+  limit: 100, // optional
+  includeUngroupedSamples: true, // optional, iOS only
+});
+// [{
+//   id: '...', startDate: '...', endDate: '...',
+//   name: 'Porridge', mealType: 'breakfast',
+//   energyKcal: 310,
+//   macros: { proteinG: 11, carbohydratesG: 54, fatG: 6 },
+//   sourceBundleId: 'com.example.food', sourceName: 'Food App',
+//   grouping: 'record',
+// }]
+```
+
+The result shape is the same on both platforms:
+
+* Energy is always kilocalories and macros are always grams, whatever unit the writing app used.
+* A nutrient the writing app did not record is left out, never reported as `0`. A recorded `0` is
+  kept.
+* Entries are sorted by `startDate` ascending. `limit` returns the earliest `limit` entries.
+
+The platforms store food differently, though, so some fields depend on the platform:
+
+| | Android (Health Connect) | iOS (HealthKit) |
+|---|---|---|
+| One entry is | one `NutritionRecord` | one food correlation (`HKCorrelationType(.food)`), plus loose samples with `includeUngroupedSamples` |
+| `grouping` | `'record'` | `'correlation'`, or `'sample'` for loose samples |
+| Nutrient values | read from the record | summed over the correlation's member samples |
+| `name` | `NutritionRecord.name` | `HKMetadataKeyFoodType` metadata |
+| `mealType` | always set; `MEAL_TYPE_UNKNOWN` becomes `'unknown'` | usually undefined - HealthKit has no standard meal type (see below) |
+| `sourceName` | omitted - Health Connect records carry no app name | name of the writing app |
+| `includeUngroupedSamples` | ignored | see below |
+| Permission | `android.permission.health.READ_NUTRITION` | read access to dietary energy, protein, carbohydrates, total fat, saturated fat, sugar and fiber |
+
+Notes:
+
+* **iOS loose samples.** Many apps write single nutrient samples (for example just the energy)
+  without wrapping them in a food correlation. These are not returned by default. With
+  `includeUngroupedSamples: true`, each sample that is not a member of a returned correlation is
+  added as its own entry with `grouping: 'sample'` and only that one nutrient set. Samples are
+  never merged into meals heuristically, so one meal can show up as several `sample` entries.
+* **iOS meal type.** HealthKit defines no meal type. The plugin only sets `mealType` when the
+  correlation's (or sample's) metadata has a key named `Meal`, `MealType`, `meal_type` or
+  `HKFoodMeal` (case-insensitive) with the value `breakfast`, `lunch`, `dinner`, `snack` or
+  `snacks` (case-insensitive). Anything else leaves it undefined. The meal type is never guessed
+  from the time of day.
+* **Android history.** Like every other query in this plugin, `queryNutrition` does not request
+  `READ_HEALTH_DATA_HISTORY`, so Health Connect only returns data from 30 days before the
+  permission was first granted.
+* iOS dates must include fractional seconds (`2026-01-01T00:00:00.000Z`).
+
 ## API
 
 <docgen-index>
@@ -162,6 +224,7 @@ Notes:
 * [`queryAggregated(...)`](#queryaggregated)
 * [`queryWorkouts(...)`](#queryworkouts)
 * [`queryRecords(...)`](#queryrecords)
+* [`queryNutrition(...)`](#querynutrition)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -324,6 +387,43 @@ Body composition measurements are taken at a single point in time, so
 --------------------
 
 
+### queryNutrition(...)
+
+```typescript
+queryNutrition(request: QueryNutritionRequest) => Promise<QueryNutritionResponse>
+```
+
+Query logged food and meals, with energy and macronutrients.
+
+Requires the `READ_NUTRITION` permission. Entries are sorted by
+`startDate` ascending. Energy is always in kilocalories and macros in
+grams. A nutrient the source did not record is omitted, never reported
+as `0`.
+
+The platforms store food differently, which shows up in the entry's
+`grouping`:
+
+- Android (Health Connect): every `NutritionRecord` is one entry with
+  `grouping: 'record'`. Health Connect stores the meal type natively.
+- iOS (HealthKit): every food correlation (`HKCorrelationType(.food)`) is
+  one entry with `grouping: 'correlation'`; its nutrients are summed from
+  the correlation's member samples. HealthKit has no standard meal type,
+  so `mealType` is usually undefined on iOS.
+- iOS with `includeUngroupedSamples: true`: nutrient samples that are not
+  part of any returned food correlation are added as one entry each with
+  `grouping: 'sample'` and only that one nutrient set. Many apps write
+  loose samples instead of correlations, so without this option their
+  data is not returned on iOS.
+
+| Param         | Type                                                                    |
+| ------------- | ----------------------------------------------------------------------- |
+| **`request`** | <code><a href="#querynutritionrequest">QueryNutritionRequest</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#querynutritionresponse">QueryNutritionResponse</a>&gt;</code>
+
+--------------------
+
+
 ### Interfaces
 
 
@@ -450,12 +550,60 @@ Body composition measurements are taken at a single point in time, so
 | **`dataType`**  | <code><a href="#recorddatatype">RecordDataType</a></code> |
 
 
+#### QueryNutritionResponse
+
+| Prop          | Type                          |
+| ------------- | ----------------------------- |
+| **`entries`** | <code>NutritionEntry[]</code> |
+
+
+#### NutritionEntry
+
+| Prop                 | Type                                                            | Description                                                                                                  |
+| -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **`id`**             | <code>string</code>                                             | Health Connect record id (Android) or HealthKit object UUID (iOS).                                           |
+| **`startDate`**      | <code>string</code>                                             |                                                                                                              |
+| **`endDate`**        | <code>string</code>                                             |                                                                                                              |
+| **`name`**           | <code>string</code>                                             | Food or meal name, if the source stored one.                                                                 |
+| **`mealType`**       | <code><a href="#mealtype">MealType</a></code>                   |                                                                                                              |
+| **`energyKcal`**     | <code>number</code>                                             | Energy in kilocalories. Omitted if the source did not record it.                                             |
+| **`macros`**         | <code><a href="#nutritionmacros">NutritionMacros</a></code>     |                                                                                                              |
+| **`sourceBundleId`** | <code>string</code>                                             | Package name (Android) or bundle identifier (iOS) of the writing app.                                        |
+| **`sourceName`**     | <code>string</code>                                             | Name of the writing app. iOS only - Health Connect records carry no app name, so this is omitted on Android. |
+| **`grouping`**       | <code><a href="#nutritiongrouping">NutritionGrouping</a></code> |                                                                                                              |
+
+
+#### NutritionMacros
+
+Macronutrients of a nutrition entry, in grams. A nutrient the source did
+not record is omitted, never `0`.
+
+| Prop                 | Type                |
+| -------------------- | ------------------- |
+| **`proteinG`**       | <code>number</code> |
+| **`carbohydratesG`** | <code>number</code> |
+| **`fatG`**           | <code>number</code> |
+| **`saturatedFatG`**  | <code>number</code> |
+| **`sugarG`**         | <code>number</code> |
+| **`fiberG`**         | <code>number</code> |
+
+
+#### QueryNutritionRequest
+
+| Prop                          | Type                 | Description                                                                                                                                                                                                               |
+| ----------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`startDate`**               | <code>string</code>  |                                                                                                                                                                                                                           |
+| **`endDate`**                 | <code>string</code>  |                                                                                                                                                                                                                           |
+| **`limit`**                   | <code>number</code>  | Maximum number of entries to return: the earliest `limit` entries after sorting. When omitted, all entries in the range are returned.                                                                                     |
+| **`includeUngroupedSamples`** | <code>boolean</code> | iOS only; ignored on Android, where every entry is a record. When `true`, nutrient samples that belong to no returned food correlation are returned as individual entries with `grouping: 'sample'`. Defaults to `false`. |
+
+
 ### Type Aliases
 
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'WRITE_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_FLIGHTS_CLIMBED' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_WEIGHT' | 'READ_HEIGHT' | 'READ_BODY_FAT' | 'READ_LEAN_BODY_MASS'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'WRITE_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_FLIGHTS_CLIMBED' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_WEIGHT' | 'READ_HEIGHT' | 'READ_BODY_FAT' | 'READ_LEAN_BODY_MASS' | 'READ_NUTRITION'</code>
 
 
 #### RecordDataType
@@ -480,5 +628,30 @@ Health Connect `FloorsClimbedRecord`). Health Connect can report fractional
 flights, Apple Health always reports whole ones.
 
 <code>'steps' | 'flights-climbed' | 'weight' | 'height' | 'body-fat' | 'lean-body-mass'</code>
+
+
+#### MealType
+
+Meal a nutrition entry belongs to.
+
+Android maps Health Connect's <a href="#mealtype">`MealType`</a> constants; `MEAL_TYPE_UNKNOWN` and
+unrecognised values become `'unknown'`. iOS has no standard meal type
+metadata, so it only sets this when the writing app stored a recognisable
+meal hint (see README).
+
+<code>'breakfast' | 'lunch' | 'dinner' | 'snack' | 'unknown'</code>
+
+
+#### NutritionGrouping
+
+How a nutrition entry was assembled from the platform's data.
+
+- `record`: one Health Connect `NutritionRecord` (Android).
+- `correlation`: one HealthKit food correlation, nutrients summed over its
+  member samples (iOS).
+- `sample`: one loose HealthKit nutrient sample that belongs to no returned
+  correlation (iOS, only with `includeUngroupedSamples`).
+
+<code>'record' | 'correlation' | 'sample'</code>
 
 </docgen-api>
